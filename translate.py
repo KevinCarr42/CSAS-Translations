@@ -17,9 +17,51 @@ class BaseTranslationModel:
         self.model = None
         self.tokenizer = None
         self.finetuned_model = None
+        self.special_tokens_added = False
         if self.parameters.get("debug"):
             logging.basicConfig(level=logging.DEBUG)
         self.logger = logging.getLogger(__name__)
+
+    def _get_keep_tokens(self):
+        """Generate list of KEEP tokens from <KEEP1> to <KEEP1024>"""
+        return [f"<KEEP{i}>" for i in range(1, 1025)]
+
+    def _add_special_tokens(self, tokenizer, model):
+        """Add KEEP tokens as special tokens to tokenizer and resize model embeddings"""
+        if self.special_tokens_added:
+            return
+
+        keep_tokens = self._get_keep_tokens()
+
+        special_tokens_dict = {'additional_special_tokens': keep_tokens}
+        num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
+
+        if num_added_toks > 0:
+            model.resize_token_embeddings(len(tokenizer))
+
+            keep_token_ids = tokenizer.convert_tokens_to_ids(keep_tokens)
+
+            # Initialize new embeddings to be similar to pad token or a neutral value
+            # This helps prevent the model from trying to translate them
+            with torch.no_grad():
+                if hasattr(model, 'get_input_embeddings'):
+                    input_embeddings = model.get_input_embeddings()
+                    if tokenizer.pad_token_id is not None:
+                        pad_embedding = input_embeddings.weight[tokenizer.pad_token_id].clone()
+                        for token_id in keep_token_ids:
+                            if token_id is not None:
+                                input_embeddings.weight[token_id] = pad_embedding
+
+                if hasattr(model, 'get_output_embeddings'):
+                    output_embeddings = model.get_output_embeddings()
+                    if tokenizer.pad_token_id is not None and output_embeddings is not None:
+                        pad_embedding = output_embeddings.weight[tokenizer.pad_token_id].clone()
+                        for token_id in keep_token_ids:
+                            if token_id is not None:
+                                output_embeddings.weight[token_id] = pad_embedding
+
+        self.special_tokens_added = True
+        self.logger.debug(f"Added {num_added_toks} special KEEP tokens to tokenizer")
 
     def _tokenizer_kwargs(self):
         return {
@@ -71,6 +113,10 @@ class BaseTranslationModel:
                 model_path, **self._model_kwargs(allow_device_map=True)
             )
             tokenizer = self.load_tokenizer()
+
+            self._add_special_tokens(tokenizer, self.model)
+
+            # Additional resize check (in case base model vocab was already different)
             if hasattr(self.model.config, "vocab_size") and len(tokenizer) > self.model.config.vocab_size:
                 self.model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
         return self.model
@@ -96,6 +142,7 @@ class BaseTranslationModel:
     def clear_cache(self):
         self.model = None
         self.finetuned_model = None
+        self.special_tokens_added = False
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -147,6 +194,7 @@ class OpusTranslationModel(BaseTranslationModel):
     def __init__(self, base_model_id, model_type="seq2seq", **parameters):
         super().__init__(base_model_id, model_type, **parameters)
         self.directional_cache = {}
+        self.directional_tokens_added = {}
 
     def _root_model_id(self):
         parts = self.base_model_id.split("-")
@@ -174,6 +222,11 @@ class OpusTranslationModel(BaseTranslationModel):
         )
         if torch.cuda.is_available():
             model = model.cuda()
+
+        if cache_key not in self.directional_tokens_added:
+            self._add_special_tokens(tokenizer, model)
+            self.directional_tokens_added[cache_key] = True
+
         if hasattr(model.config, "vocab_size") and len(tokenizer) > model.config.vocab_size:
             model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
 
@@ -205,6 +258,11 @@ class OpusTranslationModel(BaseTranslationModel):
         output_token_ids = model.generate(**model_inputs, **generation_arguments)
         text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
         return self.clean_output(text_output)
+
+    def clear_cache(self):
+        self.directional_cache.clear()
+        self.directional_tokens_added.clear()
+        super().clear_cache()
 
 
 class M2M100TranslationModel(BaseTranslationModel):
@@ -243,6 +301,7 @@ class MBART50TranslationModel(BaseTranslationModel):
     def __init__(self, base_model_id, model_type="seq2seq", **parameters):
         super().__init__(base_model_id, model_type, **parameters)
         self.directional_cache = {}
+        self.directional_tokens_added = {}
 
     def _get_directional_model_path(self, source_language, target_language):
         direction_key = f"merged_model_path_{source_language}_{target_language}"
@@ -267,6 +326,10 @@ class MBART50TranslationModel(BaseTranslationModel):
         )
         if torch.cuda.is_available():
             model = model.cuda()
+
+        if cache_key not in self.directional_tokens_added:
+            self._add_special_tokens(tokenizer, model)
+            self.directional_tokens_added[cache_key] = True
 
         if hasattr(model.config, "vocab_size") and len(tokenizer) > model.config.vocab_size:
             model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
@@ -305,6 +368,7 @@ class MBART50TranslationModel(BaseTranslationModel):
 
     def clear_cache(self):
         self.directional_cache.clear()
+        self.directional_tokens_added.clear()
         super().clear_cache()
 
 
