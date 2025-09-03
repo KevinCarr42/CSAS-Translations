@@ -1,0 +1,27 @@
+# Core ML/AI libraries
+torch==2.8.0
+transformers==4.56.0
+peft==0.17.1
+datasets==4.0.0
+sentence-transformers==5.1.0
+
+# NLP processing
+spacy==3.8.7
+
+# Data handling
+pandas==2.3.2
+numpy==2.3.2
+
+# Quantization (optional)
+bitsandbytes==0.47.0
+
+# Standard Python libraries (usually included with Python)
+# json - built-in
+# csv - built-in  
+# datetime - built-in
+# logging - built-in
+# random - built-in
+# re - built-in
+# typing - built-in
+# subprocess - built-in
+# sys - built-in

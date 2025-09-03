@@ -1,2 +1,4 @@
 *cache/
 merged/
+.idea/
+.venv/
