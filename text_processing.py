@@ -251,16 +251,3 @@ def postprocess_translation(
                     result_text = result_text.replace(token, original)
 
     return result_text
-
-
-def get_translation_statistics(
-        token_generator: SafeTokenGenerator,
-        translation_map: Dict[str, Tuple[str, str]]
-) -> Dict[str, Any]:
-    """Get statistics about what was found and processed"""
-    return {
-        "total_tokens": len(token_generator.token_map),
-        "tokens_with_translations": len(translation_map),
-        "tokens_without_translations": len(token_generator.token_map) - len(translation_map),
-        "unique_terms": len(token_generator.reverse_map)
-    }

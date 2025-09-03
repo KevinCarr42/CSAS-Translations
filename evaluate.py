@@ -7,7 +7,7 @@ from sentence_transformers import SentenceTransformer
 from sentence_transformers.util import pytorch_cos_sim
 from translate import (create_translator, NLLBTranslationModel, OpusTranslationModel,
                        M2M100TranslationModel, MBART50TranslationModel)
-from translation_matcher import preprocess_for_translation, postprocess_translation
+from text_processing import preprocess_for_translation, postprocess_translation
 
 language_codes = {
     "en": "English",
@@ -120,11 +120,12 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
 
             # data['translator'].clear_cache()  # TODO only if out of memory
 
-        # if token_mapping:  # TODO remove after debugging the pre / post processing modules
-        #     print()
-        #     for x in ['preprocessing text', source, preprocessed_text, 'postprocessing text',
-        #               translated_text_with_tokens, translated_text]:
-        #         print(f'\t{x}')
+        # TODO remove after debugging the pre / post processing modules
+        if token_mapping:
+            print()
+            for x in ['preprocessing text', source, preprocessed_text, 'postprocessing text',
+                      translated_text_with_tokens, translated_text]:
+                print(f'\t{x}')
 
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
@@ -140,7 +141,7 @@ if __name__ == "__main__":
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
 
-    all_models = {
+    all_translation_models = {
         "nllb_3b_base_researchonly": {
             "cls": NLLBTranslationModel,
             "base_model_id": "facebook/nllb-200-3.3B",
@@ -187,5 +188,5 @@ if __name__ == "__main__":
     }
 
     n_tests = 10_000
-    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False)
-    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True)
+    test_translations(all_translation_models, testing_data, n_samples=n_tests, use_eval_split=False)
+    test_translations(all_translation_models, training_data, n_samples=n_tests, use_eval_split=True)

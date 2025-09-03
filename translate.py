@@ -106,12 +106,12 @@ class NLLBTranslationModel(BaseTranslationModel):
     LANGUAGE_CODES = {"en": "eng_Latn", "fr": "fra_Latn"}
 
     def translate_text(
-        self,
-        input_text,
-        input_language="en",
-        target_language="fr",
-        use_finetuned=False,
-        generation_kwargs=None,
+            self,
+            input_text,
+            input_language="en",
+            target_language="fr",
+            use_finetuned=False,
+            generation_kwargs=None,
     ):
         tokenizer = self.load_tokenizer()
         model = self.load_model()
@@ -181,12 +181,12 @@ class OpusTranslationModel(BaseTranslationModel):
         return tokenizer, model
 
     def translate_text(
-        self,
-        input_text,
-        input_language="en",
-        target_language="fr",
-        use_finetuned=False,
-        generation_kwargs=None,
+            self,
+            input_text,
+            input_language="en",
+            target_language="fr",
+            use_finetuned=False,
+            generation_kwargs=None,
     ):
         tokenizer, model = self._load_directional(input_language, target_language)
 
