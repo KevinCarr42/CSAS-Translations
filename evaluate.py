@@ -39,7 +39,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
                       use_eval_split=True, debug=False):
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
-    csv_path = f"translation_comparison_{ts}.csv"
+    csv_path = f"translation_results/translation_comparison_{ts}.csv"
 
     print("\nLoading embedder...\n")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
@@ -187,6 +187,6 @@ if __name__ == "__main__":
         },
     }
 
-    n_tests = 10_000
+    n_tests = 10
     test_translations(all_translation_models, testing_data, n_samples=n_tests, use_eval_split=False)
     test_translations(all_translation_models, training_data, n_samples=n_tests, use_eval_split=True)
