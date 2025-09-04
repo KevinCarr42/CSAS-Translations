@@ -339,7 +339,7 @@ class NLLBTranslationModel(BaseTranslationModel):
                 output_token_ids, keep_positions, model_inputs['input_ids']
             )
 
-        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=False)[0].strip()
+        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
 
         # Aggressive preservation as fallback
         text_output = self._aggressive_keep_preservation(original_input, text_output, tokenizer)
@@ -431,7 +431,7 @@ class OpusTranslationModel(BaseTranslationModel):
                 output_token_ids, keep_positions, model_inputs['input_ids']
             )
 
-        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=False)[0].strip()
+        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
 
         # Aggressive preservation as fallback
         text_output = self._aggressive_keep_preservation(original_input, text_output, tokenizer)
@@ -483,7 +483,7 @@ class M2M100TranslationModel(BaseTranslationModel):
                 output_token_ids, keep_positions, model_inputs['input_ids']
             )
 
-        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=False)[0].strip()
+        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
 
         # Aggressive preservation as fallback
         text_output = self._aggressive_keep_preservation(original_input, text_output, tokenizer)
@@ -578,7 +578,7 @@ class MBART50TranslationModel(BaseTranslationModel):
                 output_token_ids, keep_positions, model_inputs['input_ids']
             )
 
-        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=False)[0].strip()
+        text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
 
         # Aggressive preservation as fallback
         text_output = self._aggressive_keep_preservation(original_input, text_output, tokenizer)

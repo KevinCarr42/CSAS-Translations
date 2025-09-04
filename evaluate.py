@@ -71,7 +71,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
     csv_data = []
 
     for i, d in enumerate(sample_data(testing_data, n_samples, source_lang,
-                                      use_eval_split=True, val_ratio=0.05, split_seed=42), start=1):
+                                      use_eval_split=use_eval_split, val_ratio=0.05, split_seed=42), start=1):
         source = d.get("source")
         target = d.get("target")
         source_lang = d.get("source_lang")
