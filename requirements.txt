@@ -1,27 +1,25 @@
-# Core ML/AI libraries
-torch==2.8.0
-transformers==4.56.0
-peft==0.17.1
-datasets==4.0.0
-sentence-transformers==5.1.0
+# Core packages with specific versions from your working environment
 
-# NLP processing
+# TODO: do this first manually
+# pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+
+accelerate==1.8.1
+bitsandbytes==0.46.1
+datasets==3.6.0
+huggingface-hub==0.29.1
+numpy==2.2.3
+pandas==2.2.3
+peft==0.16.0
+protobuf==6.32.0
+pyarrow==20.0.0
+pyyaml==6.0.2
+requests==2.32.3
+sacremoses==0.1.1
+safetensors==0.5.2
+scikit-learn==1.6.1
+scipy==1.15.2
+sentence-transformers==3.4.1
+sentencepiece==0.2.0
 spacy==3.8.7
-
-# Data handling
-pandas==2.3.2
-numpy==2.3.2
-
-# Quantization (optional)
-bitsandbytes==0.47.0
-
-# Standard Python libraries (usually included with Python)
-# json - built-in
-# csv - built-in  
-# datetime - built-in
-# logging - built-in
-# random - built-in
-# re - built-in
-# typing - built-in
-# subprocess - built-in
-# sys - built-in
+tqdm==4.67.1
+transformers==4.49.0

@@ -88,14 +88,19 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
         cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
 
         for name, data in all_models.items():
-            preprocessed_text, token_mapping = preprocess_for_translation(source)
+            preprocessed_text, token_generator, translation_map = preprocess_for_translation(source)
 
             translated_text_with_tokens = data['translator'].translate_text(
                 preprocessed_text,
                 input_language=source_lang,
                 target_language=other_lang
             )
-            translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
+
+            translated_text = postprocess_translation(
+                translated_text_with_tokens,
+                token_generator,
+                translation_map
+            )
 
             translated_embedding = embedder.encode(translated_text, convert_to_tensor=True)
 
@@ -121,7 +126,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
             # data['translator'].clear_cache()  # TODO only if out of memory
 
         # TODO remove after debugging the pre / post processing modules
-        if token_mapping:
+        if translation_map:
             print()
             for x in ['preprocessing text', source, preprocessed_text, 'postprocessing text',
                       translated_text_with_tokens, translated_text]:
@@ -188,5 +193,5 @@ if __name__ == "__main__":
     }
 
     n_tests = 10
-    test_translations(all_translation_models, testing_data, n_samples=n_tests, use_eval_split=False)
     test_translations(all_translation_models, training_data, n_samples=n_tests, use_eval_split=True)
+    test_translations(all_translation_models, testing_data, n_samples=n_tests, use_eval_split=False)

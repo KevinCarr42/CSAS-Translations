@@ -3,3 +3,6 @@ merged/
 .idea/
 .venv/
 translation_results/
+*.jsonl
+__pycache__/
+*.json
