@@ -35,8 +35,9 @@ def sample_data(path, n_samples=10, source_lang=None,
         return random.sample(data, k) if k < len(data) else data
 
 
-def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=None,
+def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
                       use_eval_split=True, debug=False):
+    all_errors = dict()
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
     csv_path = f"translation_results/translation_comparison_{ts}.csv"
@@ -44,8 +45,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
     print("\nLoading embedder...\n")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
     
-    all_models = dict_of_models.copy()
-    for name, data in all_models.items():
+    for name, data in dict_of_models.items():
         config_params = {
             'base_model_id': data['base_model_id'],
             'model_type': data['model_type'],
@@ -70,7 +70,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
     
     csv_data = []
     
-    for i, d in enumerate(sample_data(testing_data, n_samples, source_lang,
+    for i, d in enumerate(sample_data(dataset, n_samples, source_lang,
                                       use_eval_split=use_eval_split, val_ratio=0.05, split_seed=42), start=1):
         source = d.get("source")
         target = d.get("target")
@@ -87,7 +87,7 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
         target_embedding = embedder.encode(target, convert_to_tensor=True)
         cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
         
-        for name, data in all_models.items():
+        for name, data in dict_of_models.items():
             preprocessed_text, token_mapping = preprocess_for_translation(source)
             
             translated_text_with_tokens = data['translator'].translate_text(
@@ -96,9 +96,29 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
                 target_language=other_lang
             )
             
-            # TODO: check to make sure that all tokens are accounted for and unmodified
+            # check for preferential find and replace errors
+            error = False
+            for key in token_mapping.keys():
+                if key not in translated_text_with_tokens:
+                    error = True
             
-            translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
+            if error:
+                error_kwargs = {
+                    "source": source,
+                    "target": target,
+                    "preprocessed_text": preprocessed_text,
+                    "translated_text_with_tokens": translated_text_with_tokens,
+                }
+                all_errors[i] = error_kwargs
+                
+                # if there is a find and replace error, go back and just translate it normally
+                translated_text = data['translator'].translate_text(
+                    source,
+                    input_language=source_lang,
+                    target_language=other_lang
+                )
+            else:
+                translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
             
             translated_embedding = embedder.encode(translated_text, convert_to_tensor=True)
             
@@ -120,13 +140,6 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
             print(
                 f"{f'text out ({language_codes[other_lang]}), predicted with {name}:':<{INDENT}}{translated_text}"
             )
-        
-        # TODO remove after debugging the pre / post processing modules
-        if token_mapping:
-            print()
-            for x in ['preprocessing text', source, preprocessed_text, 'postprocessing text',
-                      translated_text_with_tokens, translated_text]:
-                print(f'\t{x}')
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
@@ -137,8 +150,11 @@ def test_translations(dict_of_models, testing_data, n_samples=10, source_lang=No
         writer.writeheader()
         writer.writerows(csv_data)
     
+    with open(f"translation_results/translation_errors_{ts}.json", "w", encoding="utf-8") as f:
+        json.dump(all_errors, f, ensure_ascii=False, indent=2)
+    
     # TODO only if out of memory
-    for _, data in all_models.items():
+    for _, data in dict_of_models.items():
         data['translator'].clear_cache()
 
 

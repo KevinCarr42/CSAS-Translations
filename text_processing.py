@@ -69,8 +69,8 @@ def preprocess_for_translation(text, translations_file="all_translations.json"):
     token_counters = {
         'nomenclature': 0,
         'taxon': 0,
-        'site': 0,
         'acronym': 0,
+        'site': 0,
         'nlp_places': 0
     }
     
