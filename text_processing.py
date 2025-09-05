@@ -35,8 +35,13 @@ def create_search_patterns(translations_data):
     return patterns
 
 
-def preserve_capitalization(original_text, replacement_text):
+def preserve_capitalization(original_text, replacement_text, is_sentence_start=False):
     if not original_text or not replacement_text:
+        return replacement_text
+    
+    if is_sentence_start:
+        if replacement_text and replacement_text[0].isalpha():
+            return replacement_text[0].upper() + replacement_text[1:]
         return replacement_text
     
     if original_text.isupper():
@@ -153,8 +158,18 @@ def postprocess_translation(translated_text, token_mapping):
         if token in result_text:
             mapping = token_mapping[token]
             
+            # capitalise if token ends up at the start of the sentence
+            token_position = result_text.find(token)
+            is_sentence_start = False
+            if token_position == 0:
+                is_sentence_start = True
+            elif token_position > 0:
+                preceding_text = result_text[:token_position].rstrip()
+                if preceding_text and preceding_text[-1] in '.!?':
+                    is_sentence_start = True
+            
             if mapping['should_translate'] and mapping['translation'] and mapping['translation'] != 'None':
-                replacement = preserve_capitalization(mapping['original_text'], mapping['translation'])
+                replacement = preserve_capitalization(mapping['original_text'], mapping['translation'], is_sentence_start)
             else:
                 replacement = mapping['original_text']
             

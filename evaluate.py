@@ -162,7 +162,7 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
 if __name__ == "__main__":
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
-    merged_model_folder = "../finetune/merged/"
+    merged_model_folder = "../Data/merged/"
     
     all_models = {
         "nllb_3b_base_researchonly": {
@@ -209,6 +209,7 @@ if __name__ == "__main__":
             "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
         },
     }
+    finetuned_models = {k: v for k, v in all_models.items() if "_finetuned" in k}
     
     n_tests = 10_000
     test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False)

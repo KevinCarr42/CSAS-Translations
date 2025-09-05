@@ -34,6 +34,7 @@ class BaseTranslationModel:
         }
         if allow_device_map:
             kwargs["device_map"] = self.parameters.get("device_map", "auto")
+            kwargs["offload_folder"] = self.parameters.get("offload_folder", "./offload")
             if self.parameters.get("max_memory"):
                 kwargs["max_memory"] = self.parameters["max_memory"]
         if self.parameters.get("revision"):
