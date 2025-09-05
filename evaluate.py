@@ -105,9 +105,9 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
             if error:
                 error_kwargs = {
                     "source": source,
-                    "target": target,
                     "preprocessed_text": preprocessed_text,
                     "translated_text_with_tokens": translated_text_with_tokens,
+                    "target": target,
                 }
                 all_errors[i] = error_kwargs
                 
@@ -150,17 +150,19 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
         writer.writeheader()
         writer.writerows(csv_data)
     
-    with open(f"translation_results/translation_errors_{ts}.json", "w", encoding="utf-8") as f:
-        json.dump(all_errors, f, ensure_ascii=False, indent=2)
+    if all_errors:
+        with open(f"translation_results/translation_errors_{ts}.json", "w", encoding="utf-8") as f:
+            json.dump(all_errors, f, ensure_ascii=False, indent=2)
     
-    # TODO only if out of memory
-    for _, data in dict_of_models.items():
-        data['translator'].clear_cache()
+    # # TODO only if out of memory
+    # for _, data in dict_of_models.items():
+    #     data['translator'].clear_cache()
 
 
 if __name__ == "__main__":
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
+    merged_model_folder = "../finetune/merged/"
     
     all_models = {
         "nllb_3b_base_researchonly": {
@@ -178,8 +180,8 @@ if __name__ == "__main__":
             "cls": OpusTranslationModel,
             "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
             "model_type": "seq2seq",
-            "merged_model_path_en_fr": "merged/opus_mt_en_fr",
-            "merged_model_path_fr_en": "merged/opus_mt_fr_en",
+            "merged_model_path_en_fr": f"{merged_model_folder}opus_mt_en_fr",
+            "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
         },
         
         "m2m100_418m_base": {
@@ -191,7 +193,7 @@ if __name__ == "__main__":
             "cls": M2M100TranslationModel,
             "base_model_id": "facebook/m2m100_418M",
             "model_type": "seq2seq",
-            "merged_model_path": "merged/m2m100_418m",
+            "merged_model_path": f"{merged_model_folder}m2m100_418m",
         },
         
         "mbart50_mmt_base": {
@@ -203,11 +205,11 @@ if __name__ == "__main__":
             "cls": MBART50TranslationModel,
             "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
             "model_type": "seq2seq",
-            "merged_model_path_en_fr": "merged/mbart50_mmt_fr",
-            "merged_model_path_fr_en": "merged/mbart50_mmt_en",
+            "merged_model_path_en_fr": f"{merged_model_folder}mbart50_mmt_fr",
+            "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
         },
     }
     
-    n_tests = 10
+    n_tests = 10_000
     test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False)
     test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True)
