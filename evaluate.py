@@ -36,11 +36,16 @@ def sample_data(path, n_samples=10, source_lang=None,
 
 
 def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
-                      use_eval_split=True, debug=False):
+                      use_eval_split=True, debug=False, name_suffix=None, bypass_rules=False):
     all_errors = dict()
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
-    csv_path = f"translation_results/translation_comparison_{ts}.csv"
+    if name_suffix:
+        csv_path = f"translation_results/translation_comparison_{name_suffix}_{ts}.csv"
+        json_path = f"translation_results/translation_errors_{name_suffix}_{ts}.json"
+    else:
+        csv_path = f"translation_results/translation_comparison_{ts}.csv"
+        json_path = f"translation_results/translation_errors_{ts}.json"
     
     print("\nLoading embedder...\n")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
@@ -88,37 +93,45 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
         cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
         
         for name, data in dict_of_models.items():
-            preprocessed_text, token_mapping = preprocess_for_translation(source)
-            
-            translated_text_with_tokens = data['translator'].translate_text(
-                preprocessed_text,
-                input_language=source_lang,
-                target_language=other_lang
-            )
-            
-            # check for preferential find and replace errors
-            error = False
-            for key in token_mapping.keys():
-                if key not in translated_text_with_tokens:
-                    error = True
-            
-            if error:
-                error_kwargs = {
-                    "source": source,
-                    "preprocessed_text": preprocessed_text,
-                    "translated_text_with_tokens": translated_text_with_tokens,
-                    "target": target,
-                }
-                all_errors[i] = error_kwargs
-                
-                # if there is a find and replace error, go back and just translate it normally
+            if bypass_rules:
                 translated_text = data['translator'].translate_text(
                     source,
                     input_language=source_lang,
                     target_language=other_lang
                 )
+                
             else:
-                translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
+                preprocessed_text, token_mapping = preprocess_for_translation(source)
+                
+                translated_text_with_tokens = data['translator'].translate_text(
+                    preprocessed_text,
+                    input_language=source_lang,
+                    target_language=other_lang
+                )
+                
+                # check for preferential find and replace errors
+                error = False
+                for key in token_mapping.keys():
+                    if key not in translated_text_with_tokens:
+                        error = True
+                
+                if error:
+                    error_kwargs = {
+                        "source": source,
+                        "preprocessed_text": preprocessed_text,
+                        "translated_text_with_tokens": translated_text_with_tokens,
+                        "target": target,
+                    }
+                    all_errors[i] = error_kwargs
+                    
+                    # if there is a find and replace error, go back and just translate it normally
+                    translated_text = data['translator'].translate_text(
+                        source,
+                        input_language=source_lang,
+                        target_language=other_lang
+                    )
+                else:
+                    translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
             
             translated_embedding = embedder.encode(translated_text, convert_to_tensor=True)
             
@@ -151,7 +164,7 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
         writer.writerows(csv_data)
     
     if all_errors:
-        with open(f"translation_results/translation_errors_{ts}.json", "w", encoding="utf-8") as f:
+        with open(json_path, "w", encoding="utf-8") as f:
             json.dump(all_errors, f, ensure_ascii=False, indent=2)
     
     # # TODO only if out of memory
@@ -163,6 +176,7 @@ if __name__ == "__main__":
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
     merged_model_folder = "../Data/merged/"
+    merged_v2_model_folder = "../Data/merged_v2/"
     
     all_models = {
         "nllb_3b_base_researchonly": {
@@ -212,5 +226,9 @@ if __name__ == "__main__":
     finetuned_models = {k: v for k, v in all_models.items() if "_finetuned" in k}
     
     n_tests = 10_000
-    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False)
-    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True)
+    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_no_rules", bypass_rules=True)
+    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_no_rules", bypass_rules=True)
+    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_rules", bypass_rules=False)
+    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_rules", bypass_rules=False)
+    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_rules_v2", bypass_rules=False)
+    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_rules_v2", bypass_rules=False)
