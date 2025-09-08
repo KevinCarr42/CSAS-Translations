@@ -35,8 +35,8 @@ def sample_data(path, n_samples=10, source_lang=None,
         return random.sample(data, k) if k < len(data) else data
 
 
-def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
-                      use_eval_split=True, debug=False, name_suffix=None, bypass_rules=False):
+def test_translations(dict_of_models, dataset, debug=False, name_suffix=None, bypass_rules=False):
+    n_samples = len(dataset)
     all_errors = dict()
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
@@ -75,8 +75,7 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
     
     csv_data = []
     
-    for i, d in enumerate(sample_data(dataset, n_samples, source_lang,
-                                      use_eval_split=use_eval_split, val_ratio=0.05, split_seed=42), start=1):
+    for i, d in enumerate(dataset, start=1):
         source = d.get("source")
         target = d.get("target")
         source_lang = d.get("source_lang")
@@ -99,7 +98,7 @@ def test_translations(dict_of_models, dataset, n_samples=10, source_lang=None,
                     input_language=source_lang,
                     target_language=other_lang
                 )
-                
+            
             else:
                 preprocessed_text, token_mapping = preprocess_for_translation(source)
                 
@@ -197,6 +196,13 @@ if __name__ == "__main__":
             "merged_model_path_en_fr": f"{merged_model_folder}opus_mt_en_fr",
             "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
         },
+        "opus_mt_finetuned_v2": {
+            "cls": OpusTranslationModel,
+            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+            "model_type": "seq2seq",
+            "merged_model_path_en_fr": f"{merged_v2_model_folder}opus_mt_en_fr",
+            "merged_model_path_fr_en": f"{merged_v2_model_folder}opus_mt_fr_en",
+        },
         
         "m2m100_418m_base": {
             "cls": M2M100TranslationModel,
@@ -208,6 +214,12 @@ if __name__ == "__main__":
             "base_model_id": "facebook/m2m100_418M",
             "model_type": "seq2seq",
             "merged_model_path": f"{merged_model_folder}m2m100_418m",
+        },
+        "m2m100_418m_finetuned_v2": {
+            "cls": M2M100TranslationModel,
+            "base_model_id": "facebook/m2m100_418M",
+            "model_type": "seq2seq",
+            "merged_model_path": f"{merged_v2_model_folder}m2m100_418m",
         },
         
         "mbart50_mmt_base": {
@@ -222,13 +234,21 @@ if __name__ == "__main__":
             "merged_model_path_en_fr": f"{merged_model_folder}mbart50_mmt_fr",
             "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
         },
+        "mbart50_mmt_finetuned_v2": {
+            "cls": MBART50TranslationModel,
+            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+            "model_type": "seq2seq",
+            "merged_model_path_en_fr": f"{merged_v2_model_folder}mbart50_mmt_fr",
+            "merged_model_path_fr_en": f"{merged_v2_model_folder}mbart50_mmt_en",
+        },
     }
     finetuned_models = {k: v for k, v in all_models.items() if "_finetuned" in k}
     
-    n_tests = 10_000
-    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_no_rules", bypass_rules=True)
-    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_no_rules", bypass_rules=True)
-    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_rules", bypass_rules=False)
-    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_rules", bypass_rules=False)
-    test_translations(all_models, testing_data, n_samples=n_tests, use_eval_split=False, name_suffix="test_rules_v2", bypass_rules=False)
-    test_translations(all_models, training_data, n_samples=n_tests, use_eval_split=True, name_suffix="train_rules_v2", bypass_rules=False)
+    n_tests = 1000  # 5 hr for 1000
+    sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False, val_ratio=0.05, split_seed=42)
+    sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True, val_ratio=0.05, split_seed=42)
+    
+    test_translations(all_models, sampled_testing_data, name_suffix="test_no_rules", bypass_rules=True)
+    test_translations(all_models, sampled_training_data, name_suffix="train_no_rules", bypass_rules=True)
+    test_translations(all_models, sampled_testing_data, name_suffix="test_rules", bypass_rules=False)
+    test_translations(all_models, sampled_training_data, name_suffix="train_rules", bypass_rules=False)
