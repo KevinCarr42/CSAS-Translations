@@ -1,4 +1,5 @@
 import random
+import os
 from datasets import load_dataset
 from datetime import datetime
 import json
@@ -35,11 +36,12 @@ def sample_data(path, n_samples=10, source_lang=None,
         return random.sample(data, k) if k < len(data) else data
 
 
-def test_translations(dict_of_models, dataset, debug=False, name_suffix=None, bypass_rules=False):
+def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name_suffix=None, bypass_rules=False):
     n_samples = len(dataset)
     all_errors = dict()
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
+    
     if name_suffix:
         csv_path = f"translation_results/translation_comparison_{name_suffix}_{ts}.csv"
         json_path = f"translation_results/translation_errors_{name_suffix}_{ts}.json"
@@ -47,33 +49,11 @@ def test_translations(dict_of_models, dataset, debug=False, name_suffix=None, by
         csv_path = f"translation_results/translation_comparison_{ts}.csv"
         json_path = f"translation_results/translation_errors_{ts}.json"
     
-    print("\nLoading embedder...\n")
-    embedder = SentenceTransformer('sentence-transformers/LaBSE')
-    
-    for name, data in dict_of_models.items():
-        config_params = {
-            'base_model_id': data['base_model_id'],
-            'model_type': data['model_type'],
-            'local_files_only': False,
-            'use_quantization': False,
-            'debug': debug,
-        }
-        
-        if 'merged_model_path' in data:
-            config_params['merged_model_path'] = data['merged_model_path']
-        
-        if 'merged_model_path_en_fr' in data:
-            config_params['merged_model_path_en_fr'] = data['merged_model_path_en_fr']
-        if 'merged_model_path_fr_en' in data:
-            config_params['merged_model_path_fr_en'] = data['merged_model_path_fr_en']
-        
-        dict_of_models[name]['translator'] = create_translator(
-            data['cls'],
-            **config_params
-        )
-        dict_of_models[name]['translator'].translate_text("Load the shards!", "en", "fr")
-    
     csv_data = []
+    
+    print(f"\nRunning test: {name_suffix if name_suffix else 'default'}")
+    print(f"Total samples: {n_samples}")
+    print("-" * 80)
     
     for i, d in enumerate(dataset, start=1):
         source = d.get("source")
@@ -98,7 +78,6 @@ def test_translations(dict_of_models, dataset, debug=False, name_suffix=None, by
                     input_language=source_lang,
                     target_language=other_lang
                 )
-            
             else:
                 preprocessed_text, token_mapping = preprocess_for_translation(source)
                 
@@ -166,12 +145,52 @@ def test_translations(dict_of_models, dataset, debug=False, name_suffix=None, by
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(all_errors, f, ensure_ascii=False, indent=2)
     
-    # # TODO only if out of memory
-    # for _, data in dict_of_models.items():
-    #     data['translator'].clear_cache()
+    print(f"\nCompleted test: {name_suffix if name_suffix else 'default'}")
+    print(f"Results saved to: {csv_path}")
+    if all_errors:
+        print(f"Errors saved to: {json_path}")
+
+
+def load_all_models(dict_of_models, debug=False):
+    print("\nLoading all translation models...")
+    
+    for name, data in dict_of_models.items():
+        print(f"Loading {name}...")
+        
+        config_params = {
+            'base_model_id': data['base_model_id'],
+            'model_type': data['model_type'],
+            'local_files_only': False,
+            'use_quantization': False,
+            'debug': debug,
+        }
+        
+        if 'merged_model_path' in data:
+            config_params['merged_model_path'] = data['merged_model_path']
+        
+        if 'merged_model_path_en_fr' in data:
+            config_params['merged_model_path_en_fr'] = data['merged_model_path_en_fr']
+        if 'merged_model_path_fr_en' in data:
+            config_params['merged_model_path_fr_en'] = data['merged_model_path_fr_en']
+        
+        try:
+            dict_of_models[name]['translator'] = create_translator(
+                data['cls'],
+                **config_params
+            )
+            # warm up the model
+            dict_of_models[name]['translator'].translate_text("Load the shards!", "en", "fr")
+            print(f"  ✓ {name} loaded successfully")
+        except Exception as e:
+            print(f"  ✗ Failed to load {name}: {str(e)}")
+    
+    print("Model loading complete!\n")
 
 
 if __name__ == "__main__":
+    random.seed(42)
+    os.makedirs("translation_results", exist_ok=True)
+    
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
     merged_model_folder = "../Data/merged/"
@@ -242,13 +261,22 @@ if __name__ == "__main__":
             "merged_model_path_fr_en": f"{merged_v2_model_folder}mbart50_mmt_en",
         },
     }
-    finetuned_models = {k: v for k, v in all_models.items() if "_finetuned" in k}
     
-    n_tests = 1000  # 5 hr for 1000
-    sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False, val_ratio=0.05, split_seed=42)
-    sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True, val_ratio=0.05, split_seed=42)
+    print("\nLoading embedder...")
+    embedder = SentenceTransformer('sentence-transformers/LaBSE')
+    print("Embedder loaded successfully!\n")
     
-    test_translations(all_models, sampled_testing_data, name_suffix="test_no_rules", bypass_rules=True)
-    test_translations(all_models, sampled_training_data, name_suffix="train_no_rules", bypass_rules=True)
-    test_translations(all_models, sampled_testing_data, name_suffix="test_rules", bypass_rules=False)
-    test_translations(all_models, sampled_training_data, name_suffix="train_rules", bypass_rules=False)
+    load_all_models(all_models, debug=False)
+    
+    n_tests = 2000
+    print(f"Sampling {n_tests} examples from datasets...")
+    sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False)
+    sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
+    print(f"Sampled {len(sampled_testing_data)} test examples and {len(sampled_training_data)} train examples\n")
+    
+    test_translations_with_loaded_models(all_models, sampled_testing_data, embedder, name_suffix="test_no_rules", bypass_rules=True)
+    test_translations_with_loaded_models(all_models, sampled_training_data, embedder, name_suffix="train_no_rules", bypass_rules=True)
+    test_translations_with_loaded_models(all_models, sampled_testing_data, embedder, name_suffix="test_rules", bypass_rules=False)
+    test_translations_with_loaded_models(all_models, sampled_training_data, embedder, name_suffix="train_rules", bypass_rules=False)
+    
+    print("\nAll tests completed!")
