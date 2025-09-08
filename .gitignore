@@ -7,3 +7,4 @@ __pycache__/
 *.json
 offload/
 translation_quality_results.csv
+console_output.txt
