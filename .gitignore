@@ -6,3 +6,4 @@ translation_results/
 __pycache__/
 *.json
 offload/
+translation_quality_results.csv
