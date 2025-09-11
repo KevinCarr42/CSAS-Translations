@@ -215,12 +215,19 @@ if __name__ == "__main__":
             "merged_model_path_en_fr": f"{merged_model_folder}opus_mt_en_fr",
             "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
         },
-        "opus_mt_finetuned_v2": {
+        "opus_mt_finetuned_25k": {
             "cls": OpusTranslationModel,
             "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
             "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_v2_model_folder}opus_mt_en_fr",
-            "merged_model_path_fr_en": f"{merged_v2_model_folder}opus_mt_fr_en",
+            "merged_model_path_en_fr": f"{merged_25k_model_folder}opus_mt_en_fr",
+            "merged_model_path_fr_en": f"{merged_25k_model_folder}opus_mt_fr_en",
+        },
+        "opus_mt_finetuned_100k": {
+            "cls": OpusTranslationModel,
+            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+            "model_type": "seq2seq",
+            "merged_model_path_en_fr": f"{merged_100k_model_folder}opus_mt_en_fr",
+            "merged_model_path_fr_en": f"{merged_100k_model_folder}opus_mt_fr_en",
         },
         
         "m2m100_418m_base": {
@@ -234,11 +241,17 @@ if __name__ == "__main__":
             "model_type": "seq2seq",
             "merged_model_path": f"{merged_model_folder}m2m100_418m",
         },
-        "m2m100_418m_finetuned_v2": {
+        "m2m100_418m_finetuned_25k": {
             "cls": M2M100TranslationModel,
             "base_model_id": "facebook/m2m100_418M",
             "model_type": "seq2seq",
-            "merged_model_path": f"{merged_v2_model_folder}m2m100_418m",
+            "merged_model_path": f"{merged_25k_model_folder}m2m100_418m",
+        },
+        "m2m100_418m_finetuned_100k": {
+            "cls": M2M100TranslationModel,
+            "base_model_id": "facebook/m2m100_418M",
+            "model_type": "seq2seq",
+            "merged_model_path": f"{merged_100k_model_folder}m2m100_418m",
         },
         
         "mbart50_mmt_base": {
@@ -253,14 +266,22 @@ if __name__ == "__main__":
             "merged_model_path_en_fr": f"{merged_model_folder}mbart50_mmt_fr",
             "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
         },
-        "mbart50_mmt_finetuned_v2": {
+        "mbart50_mmt_finetuned_25k": {
             "cls": MBART50TranslationModel,
             "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
             "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_v2_model_folder}mbart50_mmt_fr",
-            "merged_model_path_fr_en": f"{merged_v2_model_folder}mbart50_mmt_en",
+            "merged_model_path_en_fr": f"{merged_25k_model_folder}mbart50_mmt_fr",
+            "merged_model_path_fr_en": f"{merged_25k_model_folder}mbart50_mmt_en",
+        },
+        "mbart50_mmt_finetuned_100k": {
+            "cls": MBART50TranslationModel,
+            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+            "model_type": "seq2seq",
+            "merged_model_path_en_fr": f"{merged_100k_model_folder}mbart50_mmt_fr",
+            "merged_model_path_fr_en": f"{merged_100k_model_folder}mbart50_mmt_en",
         },
     }
+    no_token_models = {k:v for k, v in all_models.items() if "_25k" not in k and "_100k" not in k}
     
     print("\nLoading embedder...")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
@@ -268,14 +289,14 @@ if __name__ == "__main__":
     
     load_all_models(all_models, debug=False)
     
-    n_tests = 2000
+    n_tests = 10_000
     print(f"Sampling {n_tests} examples from datasets...")
     sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False)
     sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
     print(f"Sampled {len(sampled_testing_data)} test examples and {len(sampled_training_data)} train examples\n")
     
-    test_translations_with_loaded_models(all_models, sampled_testing_data, embedder, name_suffix="test_no_rules", bypass_rules=True)
-    test_translations_with_loaded_models(all_models, sampled_training_data, embedder, name_suffix="train_no_rules", bypass_rules=True)
+    test_translations_with_loaded_models(no_token_models, sampled_testing_data, embedder, name_suffix="test_no_rules", bypass_rules=True)
+    test_translations_with_loaded_models(no_token_models, sampled_training_data, embedder, name_suffix="train_no_rules", bypass_rules=True)
     test_translations_with_loaded_models(all_models, sampled_testing_data, embedder, name_suffix="test_rules", bypass_rules=False)
     test_translations_with_loaded_models(all_models, sampled_training_data, embedder, name_suffix="train_rules", bypass_rules=False)
     
