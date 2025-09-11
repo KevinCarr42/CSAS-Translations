@@ -283,6 +283,7 @@ if __name__ == "__main__":
         },
     }
     no_token_models = {k:v for k, v in all_models.items() if "_25k" not in k and "_100k" not in k}
+    only_token_models = {k: v for k, v in all_models.items() if "_25k" in k or "_100k" in k}
     
     print("\nLoading embedder...")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
@@ -298,7 +299,7 @@ if __name__ == "__main__":
     
     test_translations_with_loaded_models(no_token_models, sampled_testing_data, embedder, name_suffix="test_no_rules", bypass_rules=True)
     test_translations_with_loaded_models(no_token_models, sampled_training_data, embedder, name_suffix="train_no_rules", bypass_rules=True)
-    test_translations_with_loaded_models(all_models, sampled_testing_data, embedder, name_suffix="test_rules", bypass_rules=False)
-    test_translations_with_loaded_models(all_models, sampled_training_data, embedder, name_suffix="train_rules", bypass_rules=False)
+    test_translations_with_loaded_models(only_token_models, sampled_testing_data, embedder, name_suffix="test_rules", bypass_rules=False)
+    test_translations_with_loaded_models(only_token_models, sampled_training_data, embedder, name_suffix="train_rules", bypass_rules=False)
     
     print("\nAll tests completed!")
