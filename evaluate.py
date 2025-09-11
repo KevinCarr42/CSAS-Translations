@@ -194,7 +194,8 @@ if __name__ == "__main__":
     training_data = "training_data.jsonl"
     testing_data = "testing_data.jsonl"
     merged_model_folder = "../Data/merged/"
-    merged_v2_model_folder = "../Data/merged_v2/"
+    merged_25k_model_folder = "../Data/merged_25k/"
+    merged_100k_model_folder = "../Data/merged_100k/"
     
     all_models = {
         "nllb_3b_base_researchonly": {
