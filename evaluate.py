@@ -191,8 +191,8 @@ if __name__ == "__main__":
     random.seed(42)
     os.makedirs("translation_results", exist_ok=True)
     
-    training_data = "training_data.jsonl"
-    testing_data = "testing_data.jsonl"
+    training_data = "../Data/training_data.jsonl"
+    testing_data = "../Data/testing_data.jsonl"
     merged_model_folder = "../Data/merged/"
     merged_25k_model_folder = "../Data/merged_25k/"
     merged_100k_model_folder = "../Data/merged_100k/"
