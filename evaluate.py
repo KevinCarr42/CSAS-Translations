@@ -282,7 +282,7 @@ if __name__ == "__main__":
             "merged_model_path_fr_en": f"{merged_100k_model_folder}mbart50_mmt_en",
         },
     }
-    no_token_models = {k:v for k, v in all_models.items() if "_25k" not in k and "_100k" not in k}
+    no_token_models = {k: v for k, v in all_models.items() if "_25k" not in k and "_100k" not in k}
     only_token_models = {k: v for k, v in all_models.items() if "_25k" in k or "_100k" in k}
     
     print("\nLoading embedder...")
