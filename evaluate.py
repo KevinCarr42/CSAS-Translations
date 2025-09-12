@@ -135,6 +135,9 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
             csv_data.append(current_model_results)
             
             if not best_model_results or current_model_results.get('cosine_similarity_vs_source') > best_model_results.get('cosine_similarity_vs_source'):
+                # TODO: there should probably be an error check at some point
+                #  what if they all have errors?
+                #  what if the quality is way better with the errors?
                 best_model_results = current_model_results
                 best_model_results['translator_name'] = 'best_model'
                 best_model_name = name
@@ -142,7 +145,7 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
             print(
                 f"{f'text out ({language_codes[other_lang]}), predicted with {name}:':<{INDENT}}{translated_text}"
             )
-            
+        
         csv_data.append(best_model_results)
         print(
             f"{f'-> best results from {best_model_name}:':<{INDENT}}{best_model_results['translated_text']}"
