@@ -72,6 +72,7 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
         cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
         
         best_model_results = {}
+        best_model_name = ""
         
         for name, data in dict_of_models.items():
             
@@ -135,12 +136,17 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
             
             if not best_model_results or current_model_results.get('cosine_similarity_vs_source') > best_model_results.get('cosine_similarity_vs_source'):
                 best_model_results = current_model_results
+                best_model_results['translator_name'] = 'best_model'
+                best_model_name = name
             
             print(
                 f"{f'text out ({language_codes[other_lang]}), predicted with {name}:':<{INDENT}}{translated_text}"
             )
             
         csv_data.append(best_model_results)
+        print(
+            f"{f'-> best results from {best_model_name}:':<{INDENT}}{best_model_results['translated_text']}"
+        )
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
