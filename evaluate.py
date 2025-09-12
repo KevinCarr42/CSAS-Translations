@@ -71,7 +71,10 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
         target_embedding = embedder.encode(target, convert_to_tensor=True)
         cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
         
+        best_model_results = {}
+        
         for name, data in dict_of_models.items():
+            
             if bypass_rules:
                 translated_text = data['translator'].translate_text(
                     source,
@@ -100,7 +103,7 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
                         "translated_text_with_tokens": translated_text_with_tokens,
                         "target": target,
                     }
-                    all_errors[i] = error_kwargs
+                    all_errors[f"{i}_{name}"] = error_kwargs
                     
                     # if there is a find and replace error, go back and just translate it normally
                     translated_text = data['translator'].translate_text(
@@ -116,7 +119,7 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
             cos_sim_source = pytorch_cos_sim(source_embedding, translated_embedding).item()
             cos_sim_target = pytorch_cos_sim(target_embedding, translated_embedding).item()
             
-            csv_data.append({
+            current_model_results = {
                 'source': source,
                 'target': target,
                 'source_lang': source_lang,
@@ -126,11 +129,18 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
                 'cosine_similarity_original_translation': cos_sim_original,
                 'cosine_similarity_vs_source': cos_sim_source,
                 'cosine_similarity_vs_target': cos_sim_target,
-            })
+            }
+            
+            csv_data.append(current_model_results)
+            
+            if not best_model_results or current_model_results.get('cosine_similarity_vs_source') > best_model_results.get('cosine_similarity_vs_source'):
+                best_model_results = current_model_results
             
             print(
                 f"{f'text out ({language_codes[other_lang]}), predicted with {name}:':<{INDENT}}{translated_text}"
             )
+            
+        csv_data.append(best_model_results)
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
