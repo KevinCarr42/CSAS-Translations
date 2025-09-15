@@ -5,10 +5,8 @@ from datetime import datetime
 import json
 import csv
 from sentence_transformers import SentenceTransformer
-from sentence_transformers.util import pytorch_cos_sim
-from translate import (create_translator, NLLBTranslationModel, OpusTranslationModel,
-                       M2M100TranslationModel, MBART50TranslationModel)
-from text_processing import preprocess_for_translation, postprocess_translation
+from translate import (NLLBTranslationModel, OpusTranslationModel, M2M100TranslationModel,
+                       MBART50TranslationModel, TranslationManager)
 
 language_codes = {
     "en": "English",
@@ -36,18 +34,17 @@ def sample_data(path, n_samples=10, source_lang=None,
         return random.sample(data, k) if k < len(data) else data
 
 
-def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name_suffix=None, bypass_rules=False):
+def test_translations_with_loaded_models(translation_manager, dataset, name_suffix=None, bypass_rules=True):
     n_samples = len(dataset)
-    all_errors = dict()
     ts = datetime.now().strftime("%Y%m%d-%H%M")
     INDENT = 70
     
     if name_suffix:
         csv_path = f"translation_results/translation_comparison_{name_suffix}_{ts}.csv"
-        json_path = f"translation_results/translation_errors_{name_suffix}_{ts}.json"
+        errors_path = f"translation_results/translation_errors_{name_suffix}_{ts}.json"
     else:
         csv_path = f"translation_results/translation_comparison_{ts}.csv"
-        json_path = f"translation_results/translation_errors_{ts}.json"
+        errors_path = f"translation_results/translation_errors_{ts}.json"
     
     csv_data = []
     
@@ -67,90 +64,49 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
             f"\n{f'text out ({language_codes[other_lang]}), expected:':<{INDENT}}{target}"
         )
         
-        source_embedding = embedder.encode(source, convert_to_tensor=True)
-        target_embedding = embedder.encode(target, convert_to_tensor=True)
-        cos_sim_original = pytorch_cos_sim(source_embedding, target_embedding).item()
+        translation_result = translation_manager.translate_with_best_model(
+            text=source,
+            target_text=target,
+            source_lang=source_lang,
+            target_lang=other_lang,
+            use_find_replace=not bypass_rules
+        )
         
-        best_model_results = {}
-        best_model_name = ""
-        
-        for name, data in dict_of_models.items():
-            
-            # TODO: refactor this section into translator.py
-            if bypass_rules:
-                translated_text = data['translator'].translate_text(
-                    source,
-                    input_language=source_lang,
-                    target_language=other_lang
-                )
-            else:
-                preprocessed_text, token_mapping = preprocess_for_translation(source)
-                
-                translated_text_with_tokens = data['translator'].translate_text(
-                    preprocessed_text,
-                    input_language=source_lang,
-                    target_language=other_lang
-                )
-                
-                # check for preferential find and replace errors
-                error = False
-                for key in token_mapping.keys():
-                    if key not in translated_text_with_tokens:
-                        error = True
-                
-                if error:
-                    error_kwargs = {
-                        "source": source,
-                        "preprocessed_text": preprocessed_text,
-                        "translated_text_with_tokens": translated_text_with_tokens,
-                        "target": target,
-                    }
-                    all_errors[f"{i}_{name}"] = error_kwargs
-                    
-                    # if there is a find and replace error, go back and just translate it normally
-                    translated_text = data['translator'].translate_text(
-                        source,
-                        input_language=source_lang,
-                        target_language=other_lang
-                    )
-                else:
-                    translated_text = postprocess_translation(translated_text_with_tokens, token_mapping)
-            
-            translated_embedding = embedder.encode(translated_text, convert_to_tensor=True)
-            
-            cos_sim_source = pytorch_cos_sim(source_embedding, translated_embedding).item()
-            cos_sim_target = pytorch_cos_sim(target_embedding, translated_embedding).item()
-            
-            current_model_results = {
+        for model_name, result in translation_result["all_results"].items():
+            csv_entry = {
                 'source': source,
                 'target': target,
                 'source_lang': source_lang,
                 'other_lang': other_lang,
-                'translator_name': name,
-                'translated_text': translated_text,
-                'cosine_similarity_original_translation': cos_sim_original,
-                'cosine_similarity_vs_source': cos_sim_source,
-                'cosine_similarity_vs_target': cos_sim_target,
+                'translator_name': model_name,
+                'translated_text': result.get("translated_text", "[TRANSLATION FAILED]"),
+                'cosine_similarity_original_translation': result.get("similarity_vs_original",
+                                                                     translation_result["best_result"].get("similarity_vs_original")),
+                'cosine_similarity_vs_source': result.get("similarity_vs_source"),
+                'cosine_similarity_vs_target': result.get("similarity_vs_target"),
             }
+            csv_data.append(csv_entry)
             
-            csv_data.append(current_model_results)
-            
-            if not best_model_results or current_model_results.get('cosine_similarity_vs_source') > best_model_results.get('cosine_similarity_vs_source'):
-                # TODO: there should probably be an error check at some point
-                #  what if they all have errors?
-                #  what if the quality is way better with the errors?
-                best_model_results = current_model_results
-                best_model_results['translator_name'] = 'best_model'
-                best_model_name = name
-            
-            print(
-                f"{f'text out ({language_codes[other_lang]}), predicted with {name}:':<{INDENT}}{translated_text}"
-            )
+            print(f"{f'text out ({language_codes[other_lang]}), predicted with {model_name}:':<{INDENT}}"
+                  f"{result.get('translated_text', '[FAILED]')}")
         
-        csv_data.append(best_model_results)
-        print(
-            f"{f'-> best results from {best_model_name}:':<{INDENT}}{best_model_results['translated_text']}"
-        )
+        best_result = translation_result["best_result"]
+        best_csv_entry = {
+            'source': source,
+            'target': target,
+            'source_lang': source_lang,
+            'other_lang': other_lang,
+            'translator_name': 'best_model',
+            'translated_text': best_result.get("translated_text", "[NO VALID TRANSLATIONS]"),
+            'cosine_similarity_original_translation': best_result.get("similarity_vs_original"),
+            'cosine_similarity_vs_source': best_result.get("similarity_vs_source"),
+            'cosine_similarity_vs_target': best_result.get("similarity_vs_target"),
+        }
+        csv_data.append(best_csv_entry)
+        
+        best_model_source = best_result.get("best_model_source", "none")
+        print(f"{f'-> best results from {best_model_source}:':<{INDENT}}"
+              f"{best_result.get('translated_text', '[NO VALID TRANSLATIONS]')}")
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
@@ -161,50 +117,22 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
         writer.writeheader()
         writer.writerows(csv_data)
     
-    if all_errors:
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(all_errors, f, ensure_ascii=False, indent=2)
+    error_summary = translation_manager.get_error_summary()
+    if error_summary["translation_errors"] > 0 or error_summary["find_replace_errors"] > 0:
+        with open(errors_path, "w", encoding="utf-8") as f:
+            json.dump(error_summary, f, ensure_ascii=False, indent=2)
     
     print(f"\nCompleted test: {name_suffix if name_suffix else 'default'}")
     print(f"Results saved to: {csv_path}")
-    if all_errors:
-        print(f"Errors saved to: {json_path}")
-
-
-def load_all_models(dict_of_models, debug=False):
-    print("\nLoading all translation models...")
+    print(f"Total samples processed: {n_samples}")
+    print(f"Total CSV entries written: {len(csv_data)}")
     
-    for name, data in dict_of_models.items():
-        print(f"Loading {name}...")
-        
-        config_params = {
-            'base_model_id': data['base_model_id'],
-            'model_type': data['model_type'],
-            'local_files_only': False,
-            'use_quantization': False,
-            'debug': debug,
-        }
-        
-        if 'merged_model_path' in data:
-            config_params['merged_model_path'] = data['merged_model_path']
-        
-        if 'merged_model_path_en_fr' in data:
-            config_params['merged_model_path_en_fr'] = data['merged_model_path_en_fr']
-        if 'merged_model_path_fr_en' in data:
-            config_params['merged_model_path_fr_en'] = data['merged_model_path_fr_en']
-        
-        try:
-            dict_of_models[name]['translator'] = create_translator(
-                data['cls'],
-                **config_params
-            )
-            # warm up the model
-            dict_of_models[name]['translator'].translate_text("Load the shards!", "en", "fr")
-            print(f"  ✓ {name} loaded successfully")
-        except Exception as e:
-            print(f"  ✗ Failed to load {name}: {str(e)}")
-    
-    print("Model loading complete!\n")
+    if error_summary["translation_errors"] > 0:
+        print(f"Translation errors: {error_summary['translation_errors']}")
+    if error_summary["find_replace_errors"] > 0:
+        print(f"Find-replace errors: {error_summary['find_replace_errors']}")
+    if error_summary["translation_errors"] > 0 or error_summary["find_replace_errors"] > 0:
+        print(f"Error details saved to: {errors_path}")
 
 
 if __name__ == "__main__":
@@ -217,99 +145,124 @@ if __name__ == "__main__":
     merged_25k_model_folder = "../Data/merged_25k/"
     merged_100k_model_folder = "../Data/merged_100k/"
     
-    all_models = {
+    models_config = {
         "nllb_3b_base_researchonly": {
             "cls": NLLBTranslationModel,
-            "base_model_id": "facebook/nllb-200-3.3B",
-            "model_type": "seq2seq",
+            "params": {
+                "base_model_id": "facebook/nllb-200-3.3B",
+                "model_type": "seq2seq",
+            }
         },
         
         "opus_mt_base": {
             "cls": OpusTranslationModel,
-            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-            "model_type": "seq2seq",
+            "params": {
+                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+                "model_type": "seq2seq",
+            }
         },
         "opus_mt_finetuned": {
             "cls": OpusTranslationModel,
-            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_model_folder}opus_mt_en_fr",
-            "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
+            "params": {
+                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_model_folder}opus_mt_en_fr",
+                "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
+            }
         },
         "opus_mt_finetuned_25k": {
             "cls": OpusTranslationModel,
-            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_25k_model_folder}opus_mt_en_fr",
-            "merged_model_path_fr_en": f"{merged_25k_model_folder}opus_mt_fr_en",
+            "params": {
+                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_25k_model_folder}opus_mt_en_fr",
+                "merged_model_path_fr_en": f"{merged_25k_model_folder}opus_mt_fr_en",
+            }
         },
         "opus_mt_finetuned_100k": {
             "cls": OpusTranslationModel,
-            "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_100k_model_folder}opus_mt_en_fr",
-            "merged_model_path_fr_en": f"{merged_100k_model_folder}opus_mt_fr_en",
+            "params": {
+                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_100k_model_folder}opus_mt_en_fr",
+                "merged_model_path_fr_en": f"{merged_100k_model_folder}opus_mt_fr_en",
+            }
         },
         
         "m2m100_418m_base": {
             "cls": M2M100TranslationModel,
-            "base_model_id": "facebook/m2m100_418M",
-            "model_type": "seq2seq",
+            "params": {
+                "base_model_id": "facebook/m2m100_418M",
+                "model_type": "seq2seq",
+            }
         },
         "m2m100_418m_finetuned": {
             "cls": M2M100TranslationModel,
-            "base_model_id": "facebook/m2m100_418M",
-            "model_type": "seq2seq",
-            "merged_model_path": f"{merged_model_folder}m2m100_418m",
+            "params": {
+                "base_model_id": "facebook/m2m100_418M",
+                "model_type": "seq2seq",
+                "merged_model_path": f"{merged_model_folder}m2m100_418m",
+            }
         },
         "m2m100_418m_finetuned_25k": {
             "cls": M2M100TranslationModel,
-            "base_model_id": "facebook/m2m100_418M",
-            "model_type": "seq2seq",
-            "merged_model_path": f"{merged_25k_model_folder}m2m100_418m",
+            "params": {
+                "base_model_id": "facebook/m2m100_418M",
+                "model_type": "seq2seq",
+                "merged_model_path": f"{merged_25k_model_folder}m2m100_418m",
+            }
         },
         "m2m100_418m_finetuned_100k": {
             "cls": M2M100TranslationModel,
-            "base_model_id": "facebook/m2m100_418M",
-            "model_type": "seq2seq",
-            "merged_model_path": f"{merged_100k_model_folder}m2m100_418m",
+            "params": {
+                "base_model_id": "facebook/m2m100_418M",
+                "model_type": "seq2seq",
+                "merged_model_path": f"{merged_100k_model_folder}m2m100_418m",
+            }
         },
         
         "mbart50_mmt_base": {
             "cls": MBART50TranslationModel,
-            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-            "model_type": "seq2seq",
+            "params": {
+                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+                "model_type": "seq2seq",
+            }
         },
         "mbart50_mmt_finetuned": {
             "cls": MBART50TranslationModel,
-            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_model_folder}mbart50_mmt_fr",
-            "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
+            "params": {
+                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_model_folder}mbart50_mmt_fr",
+                "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
+            }
         },
         "mbart50_mmt_finetuned_25k": {
             "cls": MBART50TranslationModel,
-            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_25k_model_folder}mbart50_mmt_fr",
-            "merged_model_path_fr_en": f"{merged_25k_model_folder}mbart50_mmt_en",
+            "params": {
+                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_25k_model_folder}mbart50_mmt_fr",
+                "merged_model_path_fr_en": f"{merged_25k_model_folder}mbart50_mmt_en",
+            }
         },
         "mbart50_mmt_finetuned_100k": {
             "cls": MBART50TranslationModel,
-            "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-            "model_type": "seq2seq",
-            "merged_model_path_en_fr": f"{merged_100k_model_folder}mbart50_mmt_fr",
-            "merged_model_path_fr_en": f"{merged_100k_model_folder}mbart50_mmt_en",
+            "params": {
+                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
+                "model_type": "seq2seq",
+                "merged_model_path_en_fr": f"{merged_100k_model_folder}mbart50_mmt_fr",
+                "merged_model_path_fr_en": f"{merged_100k_model_folder}mbart50_mmt_en",
+            }
         },
     }
-    no_token_models = {k: v for k, v in all_models.items() if "_25k" not in k and "_100k" not in k}
-    only_token_models = {k: v for k, v in all_models.items() if "_25k" in k or "_100k" in k}
+    
+    no_token_models = {k: v for k, v in models_config.items() if "_25k" not in k and "_100k" not in k}
+    only_token_models = {k: v for k, v in models_config.items() if "_25k" in k or "_100k" in k}
     
     print("\nLoading embedder...")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
     print("Embedder loaded successfully!\n")
-    
-    load_all_models(all_models, debug=False)
     
     n_tests = 10_000
     print(f"Sampling {n_tests} examples from datasets...")
@@ -317,9 +270,19 @@ if __name__ == "__main__":
     sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
     print(f"Sampled {len(sampled_testing_data)} test examples and {len(sampled_training_data)} train examples\n")
     
-    test_translations_with_loaded_models(no_token_models, sampled_testing_data, embedder, name_suffix="test_no_rules", bypass_rules=True)
-    test_translations_with_loaded_models(no_token_models, sampled_training_data, embedder, name_suffix="train_no_rules", bypass_rules=True)
-    test_translations_with_loaded_models(only_token_models, sampled_testing_data, embedder, name_suffix="test_rules", bypass_rules=False)
-    test_translations_with_loaded_models(only_token_models, sampled_training_data, embedder, name_suffix="train_rules", bypass_rules=False)
+    no_rules_manager = TranslationManager(no_token_models, embedder)
+    print("Loading models for no-rules evaluation...")
+    no_rules_results = no_rules_manager.load_models()
+    print(f"Successfully loaded {sum(1 for r in no_rules_results.values() if r['success'])} models")
+    
+    rules_manager = TranslationManager(only_token_models, embedder)
+    print("Loading models for find-replace rules evaluation...")
+    rules_results = rules_manager.load_models()
+    print(f"Successfully loaded {sum(1 for r in rules_results.values() if r['success'])} models")
+    
+    test_translations_with_loaded_models(no_rules_manager, sampled_testing_data, "test_no_rules", True)
+    test_translations_with_loaded_models(no_rules_manager, sampled_training_data, "train_no_rules", True)
+    test_translations_with_loaded_models(rules_manager, sampled_testing_data, "test_rules", False)
+    test_translations_with_loaded_models(rules_manager, sampled_training_data, "train_rules", False)
     
     print("\nAll tests completed!")
