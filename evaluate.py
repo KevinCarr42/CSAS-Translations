@@ -76,6 +76,7 @@ def test_translations_with_loaded_models(dict_of_models, dataset, embedder, name
         
         for name, data in dict_of_models.items():
             
+            # TODO: refactor this section into translator.py
             if bypass_rules:
                 translated_text = data['translator'].translate_text(
                     source,
