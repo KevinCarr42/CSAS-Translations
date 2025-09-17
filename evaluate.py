@@ -35,12 +35,12 @@ def sample_data(path, n_samples=10, source_lang=None,
 
 def test_translations_with_loaded_models(translation_manager, dataset, name_suffix=None, bypass_rules=True):
     n_samples = len(dataset)
-    ts = datetime.now().strftime("%Y%m%d-%H%M")
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
     INDENT = 70
     
     if name_suffix:
-        csv_path = f"translation_results/translation_comparison_{name_suffix}_{ts}.csv"
-        errors_path = f"translation_results/translation_errors_{name_suffix}_{ts}.json"
+        csv_path = f"translation_results/{ts}_translation_comparison_{name_suffix}.csv"
+        errors_path = f"translation_results/{ts}_translation_errors_{name_suffix}.json"
     else:
         csv_path = f"translation_results/translation_comparison_{ts}.csv"
         errors_path = f"translation_results/translation_errors_{ts}.json"
@@ -99,7 +99,7 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
         writer.writerows(csv_data)
     
     error_summary = translation_manager.get_error_summary()
-    if error_summary["translation_errors"] > 0 or error_summary["find_replace_errors"] > 0:
+    if error_summary["extra_token_errors"] > 0 or error_summary["find_replace_errors"] > 0:
         with open(errors_path, "w", encoding="utf-8") as f:
             json.dump(error_summary, f, ensure_ascii=False, indent=2)
     
@@ -108,11 +108,11 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
     print(f"Total samples processed: {n_samples}")
     print(f"Total CSV entries written: {len(csv_data)}")
     
-    if error_summary["translation_errors"] > 0:
-        print(f"Translation errors: {error_summary['translation_errors']}")
+    if error_summary["extra_token_errors"] > 0:
+        print(f"Extra token errors: {error_summary['extra_token_errors']}")
     if error_summary["find_replace_errors"] > 0:
         print(f"Find-replace errors: {error_summary['find_replace_errors']}")
-    if error_summary["translation_errors"] > 0 or error_summary["find_replace_errors"] > 0:
+    if error_summary["extra_token_errors"] > 0 or error_summary["find_replace_errors"] > 0:
         print(f"Error details saved to: {errors_path}")
 
 
@@ -244,9 +244,13 @@ if __name__ == "__main__":
     print("Loading models...")
     translation_manager.load_models()
     
-    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", True)
-    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", True)
-    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", False)
-    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", False)
+    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", True)
+    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", True)
+    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", False)
+    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", False)
+    
+    # TODO: test repeated failuers fix
+    repeated_failures_data = [sampled_testing_data[0] for _ in range(n_tests)]
+    test_translations_with_loaded_models(translation_manager, repeated_failures_data, "repeated_failures", True)
     
     print("\nAll tests completed!")

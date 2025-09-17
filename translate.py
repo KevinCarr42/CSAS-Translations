@@ -359,10 +359,8 @@ class TranslationManager:
         for token_prefix in ['NOMENCLATURE', 'TAXON', 'ACRONYM', 'SITE']:
             if token_prefix in translated_text:
                 # just in case that all caps token is actually in the source text
-                if token_prefix in text:
-                    continue
-                
-                token_prefix_error = True
+                if token_prefix not in text:
+                    token_prefix_error = True
         
         if token_prefix_error:
             tokens_to_replace = [x for x in token_mapping.keys()] if token_mapping else None
