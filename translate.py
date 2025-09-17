@@ -230,49 +230,6 @@ class M2M100TranslationModel(BaseTranslationModel):
         output_token_ids = model.generate(**model_inputs, **generation_arguments)
         text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
         return self.clean_output(text_output)
-    
-    # TODO: DELETE AFTER TESTING
-    # def translate_text(self, input_text, input_language="en", target_language="fr", generation_kwargs=None):
-    #     tokenizer = self.load_tokenizer()
-    #     model = self.load_model()
-    #
-    #     source_code = self.LANGUAGE_CODES[input_language]
-    #     target_code = self.LANGUAGE_CODES[target_language]
-    #     tokenizer.src_lang = source_code
-    #
-    #     model_inputs = tokenizer(input_text, return_tensors="pt", padding=True)
-    #     model_inputs = {k: (v.to(model.device) if hasattr(v, "to") else v) for k, v in model_inputs.items()}
-    #
-    #     generation_arguments = {
-    #         "max_new_tokens": 256,
-    #         "num_beams": 4,
-    #         "do_sample": False,
-    #         "pad_token_id": tokenizer.pad_token_id,
-    #         "forced_bos_token_id": tokenizer.get_lang_id(target_code),
-    #     }
-    #
-    #     print(f"BEFORE update - generation_kwargs type: {type(generation_kwargs)}, value: {generation_kwargs}")
-    #
-    #     if generation_kwargs:
-    #         print(f"BEFORE update: {generation_arguments}")
-    #         generation_arguments.update(generation_kwargs)
-    #         print(f"AFTER update: {generation_arguments}")
-    #
-    #     # CRITICAL TEST - manually override to prove it works
-    #     # generation_arguments["max_new_tokens"] = 5
-    #     # print(f"MANUALLY FORCED max_new_tokens=5")
-    #
-    #     print(f"CALLING generate() with: {generation_arguments}")
-    #     output_token_ids = model.generate(**model_inputs, **generation_arguments)
-    #
-    #     print(f"Output shape: {output_token_ids.shape}")
-    #     print(f"Output tokens: {output_token_ids[0][:20]}")  # First 20 tokens
-    #
-    #     text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
-    #     print(f"Decoded text length: {len(text_output)}")
-    #     print(f"First 50 chars: {text_output[:50]}")
-    #
-    #     return self.clean_output(text_output)
 
 
 class MBART50TranslationModel(BaseTranslationModel):
@@ -366,6 +323,7 @@ class TranslationManager:
             _ = model_instance.translate_text("Test", "en", "fr")
             self.loaded_models[name] = model_instance
     
+    # TODO: confirm this reduces token errors before deploying, otherwise clean-up
     def translate_with_retries(self, model, text, source_lang, target_lang,
                                token_mapping=None, base_generation_kwargs=None):
         param_variations = [
@@ -378,10 +336,6 @@ class TranslationManager:
             {"num_beams": 4, "length_penalty": 0.8},
             {"num_beams": 4, "length_penalty": 1.2},
             {"num_beams": 4, "repetition_penalty": 1.1},
-            # TODO: delete after testing
-            {"max_new_tokens": 10},
-            {"max_new_tokens": 5},
-            {"min_length": 200},
         ]
         
         base_kwargs = base_generation_kwargs or {}
@@ -390,16 +344,15 @@ class TranslationManager:
             generation_kwargs = {**base_kwargs, **params}
             
             translated = model.translate_text(
-                text, source_lang, target_lang, generation_kwargs=generation_kwargs
+                text, source_lang, target_lang, generation_kwargs
             )
             
             if self.is_valid_translation(translated, text, token_mapping):
-                print(f'VALID :) ({i})')  # TODO: delete after testing
+                if i:
+                    print(f"\tValid translation following {i} retries.")
                 return translated, i, params
-            else:  # TODO: delete after testing
-                print(f'invalid :( ({i}):\t', params)
-                print('\t\t\t', translated)
         
+        print(f"\tNo valid translations found following {i} attempted configs.")
         return None, len(param_variations), None
     
     def check_token_prefix_error(self, translated_text, original_text):
@@ -445,15 +398,14 @@ class TranslationManager:
                 )
             else:
                 find_replace_error = True
-                if debug:
-                    self.find_replace_errors[f"{model_name}_{idx}"] = {
-                        "original_text": text,
-                        "preprocessed_text": preprocessed_text,
-                        "translated_with_tokens": translated_with_tokens,
-                        "token_mapping": token_mapping,
-                        "retry_attempts": retry_attempts,
-                        "final_retry_params": retry_params,
-                    }
+                self.find_replace_errors[f"{model_name}_{idx}"] = {
+                    "original_text": text,
+                    "preprocessed_text": preprocessed_text,
+                    "translated_with_tokens": translated_with_tokens,
+                    "token_mapping": token_mapping,
+                    "retry_attempts": retry_attempts,
+                    "final_retry_params": retry_params,
+                }
                 translated_text = model.translate_text(
                     text, source_lang, target_lang, generation_kwargs
                 )
@@ -517,7 +469,8 @@ class TranslationManager:
             )
             all_results[model_name] = result
             
-            if self.is_valid_translation(result['translated_text'], text) and result["similarity_vs_source"] is not None:
+            if (self.is_valid_translation(result['translated_text'], text)
+                    and result["similarity_vs_source"] is not None):
                 if result["similarity_vs_source"] > best_similarity:
                     best_similarity = result["similarity_vs_source"]
                     best_result = result.copy()
@@ -536,8 +489,10 @@ class TranslationManager:
         
         all_results['best_model'] = best_result
         
-        # TODO: option to just return best model results without the extra info
         return all_results
+    
+    def translate_with_best_model(self, *args, **kwargs):
+        return self.translate_with_all_models(*args, **kwargs)["best_model"]
     
     def get_error_summary(self):
         return {

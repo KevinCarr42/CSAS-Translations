@@ -42,8 +42,8 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
         csv_path = f"translation_results/{ts}_translation_comparison_{name_suffix}.csv"
         errors_path = f"translation_results/{ts}_translation_errors_{name_suffix}.json"
     else:
-        csv_path = f"translation_results/translation_comparison_{ts}.csv"
-        errors_path = f"translation_results/translation_errors_{ts}.json"
+        csv_path = f"translation_results/{ts}_translation_comparison.csv"
+        errors_path = f"translation_results/{ts}_translation_errors.json"
     
     csv_data = []
     
@@ -114,6 +114,8 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
         print(f"Find-replace errors: {error_summary['find_replace_errors']}")
     if error_summary["extra_token_errors"] > 0 or error_summary["find_replace_errors"] > 0:
         print(f"Error details saved to: {errors_path}")
+    else:
+        print("No Errors! Error log not saved.")
 
 
 if __name__ == "__main__":
@@ -123,8 +125,6 @@ if __name__ == "__main__":
     training_data = "../Data/training_data.jsonl"
     testing_data = "../Data/testing_data.jsonl"
     merged_model_folder = "../Data/merged/"
-    merged_25k_model_folder = "../Data/merged_25k/"
-    merged_100k_model_folder = "../Data/merged_100k/"
     
     all_models = {
         "opus_mt_base": {
@@ -143,24 +143,6 @@ if __name__ == "__main__":
                 "merged_model_path_fr_en": f"{merged_model_folder}opus_mt_fr_en",
             }
         },
-        "opus_mt_finetuned_25k": {
-            "cls": OpusTranslationModel,
-            "params": {
-                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-                "model_type": "seq2seq",
-                "merged_model_path_en_fr": f"{merged_25k_model_folder}opus_mt_en_fr",
-                "merged_model_path_fr_en": f"{merged_25k_model_folder}opus_mt_fr_en",
-            }
-        },
-        "opus_mt_finetuned_100k": {
-            "cls": OpusTranslationModel,
-            "params": {
-                "base_model_id": "Helsinki-NLP/opus-mt-tc-big-en-fr",
-                "model_type": "seq2seq",
-                "merged_model_path_en_fr": f"{merged_100k_model_folder}opus_mt_en_fr",
-                "merged_model_path_fr_en": f"{merged_100k_model_folder}opus_mt_fr_en",
-            }
-        },
         
         "m2m100_418m_base": {
             "cls": M2M100TranslationModel,
@@ -175,22 +157,6 @@ if __name__ == "__main__":
                 "base_model_id": "facebook/m2m100_418M",
                 "model_type": "seq2seq",
                 "merged_model_path": f"{merged_model_folder}m2m100_418m",
-            }
-        },
-        "m2m100_418m_finetuned_25k": {
-            "cls": M2M100TranslationModel,
-            "params": {
-                "base_model_id": "facebook/m2m100_418M",
-                "model_type": "seq2seq",
-                "merged_model_path": f"{merged_25k_model_folder}m2m100_418m",
-            }
-        },
-        "m2m100_418m_finetuned_100k": {
-            "cls": M2M100TranslationModel,
-            "params": {
-                "base_model_id": "facebook/m2m100_418M",
-                "model_type": "seq2seq",
-                "merged_model_path": f"{merged_100k_model_folder}m2m100_418m",
             }
         },
         
@@ -210,31 +176,13 @@ if __name__ == "__main__":
                 "merged_model_path_fr_en": f"{merged_model_folder}mbart50_mmt_en",
             }
         },
-        "mbart50_mmt_finetuned_25k": {
-            "cls": MBART50TranslationModel,
-            "params": {
-                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-                "model_type": "seq2seq",
-                "merged_model_path_en_fr": f"{merged_25k_model_folder}mbart50_mmt_fr",
-                "merged_model_path_fr_en": f"{merged_25k_model_folder}mbart50_mmt_en",
-            }
-        },
-        "mbart50_mmt_finetuned_100k": {
-            "cls": MBART50TranslationModel,
-            "params": {
-                "base_model_id": "facebook/mbart-large-50-many-to-many-mmt",
-                "model_type": "seq2seq",
-                "merged_model_path_en_fr": f"{merged_100k_model_folder}mbart50_mmt_fr",
-                "merged_model_path_fr_en": f"{merged_100k_model_folder}mbart50_mmt_en",
-            }
-        },
     }
     
     print("\nLoading embedder...")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
     print("Embedder loaded successfully!\n")
     
-    n_tests = 10
+    n_tests = 1000
     print(f"Sampling {n_tests} examples from datasets...")
     sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False)
     sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
@@ -243,13 +191,9 @@ if __name__ == "__main__":
     print("Loading models...")
     translation_manager.load_models()
     
-    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", False)
-    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", False)
-    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", True)
-    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", True)
-    
-    # TODO: test repeated failuers fix
-    repeated_failures_data = [sampled_testing_data[0] for _ in range(n_tests)]
-    test_translations_with_loaded_models(translation_manager, repeated_failures_data, "repeated_failures", True)
+    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test", True)
+    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train", True)
+    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_find_and_replace", False)
+    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_find_and_replace", False)
     
     print("\nAll tests completed!")
