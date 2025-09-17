@@ -5,8 +5,7 @@ from datetime import datetime
 import json
 import csv
 from sentence_transformers import SentenceTransformer
-from translate import (NLLBTranslationModel, OpusTranslationModel, M2M100TranslationModel,
-                       MBART50TranslationModel, TranslationManager)
+from translate import OpusTranslationModel, M2M100TranslationModel, MBART50TranslationModel, TranslationManager
 
 language_codes = {
     "en": "English",
@@ -64,15 +63,16 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
             f"\n{f'text out ({language_codes[other_lang]}), expected:':<{INDENT}}{target}"
         )
         
-        translation_result = translation_manager.translate_with_best_model(
+        translation_result = translation_manager.translate_with_all_models(
             text=source,
-            target_text=target,
             source_lang=source_lang,
             target_lang=other_lang,
-            use_find_replace=not bypass_rules
+            use_find_replace=not bypass_rules,
+            idx=i,
+            target_text=target,
         )
         
-        for model_name, result in translation_result["all_results"].items():
+        for model_name, result in translation_result.items():
             csv_entry = {
                 'source': source,
                 'target': target,
@@ -80,8 +80,7 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
                 'other_lang': other_lang,
                 'translator_name': model_name,
                 'translated_text': result.get("translated_text", "[TRANSLATION FAILED]"),
-                'cosine_similarity_original_translation': result.get("similarity_vs_original",
-                                                                     translation_result["best_result"].get("similarity_vs_original")),
+                'cosine_similarity_original_translation': result.get("similarity_of_original_translation"),
                 'cosine_similarity_vs_source': result.get("similarity_vs_source"),
                 'cosine_similarity_vs_target': result.get("similarity_vs_target"),
             }
@@ -89,24 +88,6 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
             
             print(f"{f'text out ({language_codes[other_lang]}), predicted with {model_name}:':<{INDENT}}"
                   f"{result.get('translated_text', '[FAILED]')}")
-        
-        best_result = translation_result["best_result"]
-        best_csv_entry = {
-            'source': source,
-            'target': target,
-            'source_lang': source_lang,
-            'other_lang': other_lang,
-            'translator_name': 'best_model',
-            'translated_text': best_result.get("translated_text", "[NO VALID TRANSLATIONS]"),
-            'cosine_similarity_original_translation': best_result.get("similarity_vs_original"),
-            'cosine_similarity_vs_source': best_result.get("similarity_vs_source"),
-            'cosine_similarity_vs_target': best_result.get("similarity_vs_target"),
-        }
-        csv_data.append(best_csv_entry)
-        
-        best_model_source = best_result.get("best_model_source", "none")
-        print(f"{f'-> best results from {best_model_source}:':<{INDENT}}"
-              f"{best_result.get('translated_text', '[NO VALID TRANSLATIONS]')}")
     
     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = [
@@ -145,15 +126,7 @@ if __name__ == "__main__":
     merged_25k_model_folder = "../Data/merged_25k/"
     merged_100k_model_folder = "../Data/merged_100k/"
     
-    models_config = {
-        "nllb_3b_base_researchonly": {
-            "cls": NLLBTranslationModel,
-            "params": {
-                "base_model_id": "facebook/nllb-200-3.3B",
-                "model_type": "seq2seq",
-            }
-        },
-        
+    all_models = {
         "opus_mt_base": {
             "cls": OpusTranslationModel,
             "params": {
@@ -257,32 +230,23 @@ if __name__ == "__main__":
         },
     }
     
-    no_token_models = {k: v for k, v in models_config.items() if "_25k" not in k and "_100k" not in k}
-    only_token_models = {k: v for k, v in models_config.items() if "_25k" in k or "_100k" in k}
-    
     print("\nLoading embedder...")
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
     print("Embedder loaded successfully!\n")
     
-    n_tests = 10_000
+    n_tests = 100
     print(f"Sampling {n_tests} examples from datasets...")
     sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False)
     sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
     print(f"Sampled {len(sampled_testing_data)} test examples and {len(sampled_training_data)} train examples\n")
     
-    no_rules_manager = TranslationManager(no_token_models, embedder)
-    print("Loading models for no-rules evaluation...")
-    no_rules_results = no_rules_manager.load_models()
-    print(f"Successfully loaded {sum(1 for r in no_rules_results.values() if r['success'])} models")
+    translation_manager = TranslationManager(all_models, embedder)
+    print("Loading models...")
+    translation_manager.load_models()
     
-    rules_manager = TranslationManager(only_token_models, embedder)
-    print("Loading models for find-replace rules evaluation...")
-    rules_results = rules_manager.load_models()
-    print(f"Successfully loaded {sum(1 for r in rules_results.values() if r['success'])} models")
-    
-    test_translations_with_loaded_models(no_rules_manager, sampled_testing_data, "test_no_rules", True)
-    test_translations_with_loaded_models(no_rules_manager, sampled_training_data, "train_no_rules", True)
-    test_translations_with_loaded_models(rules_manager, sampled_testing_data, "test_rules", False)
-    test_translations_with_loaded_models(rules_manager, sampled_training_data, "train_rules", False)
+    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", True)
+    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", True)
+    test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", False)
+    test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", False)
     
     print("\nAll tests completed!")

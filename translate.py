@@ -1,11 +1,9 @@
 import logging
 import torch
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSeq2SeqLM,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-)
+from sentence_transformers.util import pytorch_cos_sim
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, BitsAndBytesConfig
+
+from text_processing import preprocess_for_translation, postprocess_translation
 
 
 class BaseTranslationModel:
@@ -309,148 +307,116 @@ class MBART50TranslationModel(BaseTranslationModel):
 
 
 class TranslationManager:
-    def __init__(self, models_config, embedder=None):
-        self.models_config = models_config
+    def __init__(self, all_models, embedder=None):
+        self.all_models = all_models
         self.embedder = embedder
         self.loaded_models = {}
-        self.translation_errors = {}
         self.find_replace_errors = {}
+        self.extra_token_errors = {}
     
     def load_models(self, model_names=None):
         if model_names is None:
-            model_names = list(self.models_config.keys())
-        
-        results = {}
+            model_names = list(self.all_models.keys())
         
         for name in model_names:
-            if name not in self.models_config:
-                results[name] = {"success": False, "error": "Model not in config"}
-                continue
-            
-            try:
-                config = self.models_config[name]
-                model_instance = config['cls'](**config.get('params', {}))
-                
-                test_result = model_instance.translate_text("Test", "en", "fr")
-                if not test_result or len(test_result.strip()) == 0:
-                    raise ValueError("Model returned empty result")
-                
-                self.loaded_models[name] = model_instance
-                results[name] = {"success": True, "test_result": test_result[:50]}
-            
-            except Exception as e:
-                results[name] = {"success": False, "error": str(e)}
-        
-        return results
+            config = self.all_models[name]
+            model_instance = config['cls'](**config.get('params', {}))
+            _ = model_instance.translate_text("Test", "en", "fr")
+            self.loaded_models[name] = model_instance
     
     def translate_single(self, text, model_name, source_lang="en", target_lang="fr",
-                         use_find_replace=False, generation_kwargs=None):
-        if model_name not in self.loaded_models:
-            return {
-                "success": False,
-                "error": f"Model {model_name} not loaded",
-                "translated_text": None,
-                "similarity_vs_source": None,
-                "similarity_vs_target": None
-            }
+                         use_find_replace=False, generation_kwargs=None, idx=None, target_text=None):
+        model = self.loaded_models[model_name]
         
-        try:
-            model = self.loaded_models[model_name]
+        find_replace_error = False
+        if use_find_replace:
+            preprocessed_text, token_mapping = preprocess_for_translation(text)
+            translated_with_tokens = model.translate_text(preprocessed_text, source_lang, target_lang, generation_kwargs)
             
-            if use_find_replace:
-                from text_processing import preprocess_for_translation, postprocess_translation
-                
-                try:
-                    preprocessed_text, token_mapping = preprocess_for_translation(text)
-                    translated_with_tokens = model.translate_text(
-                        preprocessed_text, source_lang, target_lang, generation_kwargs
-                    )
-                    
-                    # Check for find-and-replace errors
-                    find_replace_error = False
-                    for key in token_mapping.keys():
-                        if key not in translated_with_tokens:
-                            find_replace_error = True
-                            break
-                    
-                    if find_replace_error:
-                        self.find_replace_errors[f"{model_name}_{hash(text)}"] = {
-                            "original_text": text,
-                            "preprocessed_text": preprocessed_text,
-                            "translated_with_tokens": translated_with_tokens,
-                            "token_mapping": token_mapping
-                        }
-                        translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
-                    else:
-                        translated_text = postprocess_translation(translated_with_tokens, token_mapping)
-                
-                except Exception as e:
-                    self.translation_errors[f"{model_name}_{hash(text)}"] = {
-                        "error": f"Preprocessing failed: {str(e)}",
-                        "original_text": text
-                    }
-                    translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
-            else:
+            for key in token_mapping.keys():
+                # FIXME: should this pop instead of just checking if it exists, so that we can count and watch out for extra incorrect duplicates?
+                if key not in translated_with_tokens:
+                    find_replace_error = True
+                    break
+            
+            if find_replace_error:
+                self.find_replace_errors[f"{model_name}_{idx}"] = {
+                    "original_text": text,
+                    "preprocessed_text": preprocessed_text,
+                    "translated_with_tokens": translated_with_tokens,
+                    "token_mapping": token_mapping,
+                }
                 translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
-            
-            similarity_vs_source = None
-            similarity_vs_target = None
-            
-            if self.embedder and translated_text:
-                try:
-                    from sentence_transformers.util import pytorch_cos_sim
-                    
-                    source_embedding = self.embedder.encode(text, convert_to_tensor=True)
-                    translated_embedding = self.embedder.encode(translated_text, convert_to_tensor=True)
-                    similarity_vs_source = pytorch_cos_sim(source_embedding, translated_embedding).item()
-                
-                except Exception as e:
-                    self.translation_errors[f"{model_name}_{hash(text)}_embedding"] = {
-                        "error": f"Embedding calculation failed: {str(e)}",
-                        "original_text": text,
-                        "translated_text": translated_text
-                    }
-            
-            return {
-                "success": True,
-                "translated_text": translated_text,
-                "similarity_vs_source": similarity_vs_source,
-                "similarity_vs_target": similarity_vs_target,
-                "model_name": model_name
-            }
+            else:
+                translated_text = postprocess_translation(translated_with_tokens, token_mapping)
+        else:
+            preprocessed_text = None
+            translated_with_tokens = None
+            token_mapping = None
+            translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
         
-        except Exception as e:
-            error_key = f"{model_name}_{hash(text)}"
-            self.translation_errors[error_key] = {
-                "error": str(e),
-                "original_text": text
+        token_prefix_error = False
+        for token_prefix in ['NOMENCLATURE', 'TAXON', 'ACRONYM', 'SITE']:
+            if token_prefix in translated_text:
+                # just in case that all caps token is actually in the source text
+                if token_prefix in text:
+                    continue
+                
+                token_prefix_error = True
+        
+        if token_prefix_error:
+            tokens_to_replace = [x for x in token_mapping.keys()] if token_mapping else None
+            self.extra_token_errors[f"{model_name}_{idx}"] = {
+                "original_text": text,
+                "translated_text": translated_text,
+                "use_find_replace": use_find_replace,
+                "tokens_to_replace": tokens_to_replace,
+                "preprocessed_text": preprocessed_text,
+                "translated_with_tokens": translated_with_tokens,
             }
             
-            return {
-                "success": False,
-                "error": str(e),
-                "translated_text": None,
-                "similarity_vs_source": None,
-                "similarity_vs_target": None,
-                "model_name": model_name
-            }
+            # # TODO: fix translated text after debugging
+            # translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
+        
+        source_embedding = self.embedder.encode(text, convert_to_tensor=True)
+        translated_embedding = self.embedder.encode(translated_text, convert_to_tensor=True)
+        similarity_vs_source = pytorch_cos_sim(source_embedding, translated_embedding).item()
+        
+        similarity_vs_target = None
+        similarity_of_original_translation = None
+        if target_text:
+            target_embedding = self.embedder.encode(target_text, convert_to_tensor=True)
+            similarity_vs_target = pytorch_cos_sim(target_embedding, translated_embedding).item()
+            similarity_of_original_translation = pytorch_cos_sim(source_embedding, target_embedding).item()
+        
+        return {
+            "find_replace_error": find_replace_error,
+            "token_prefix_error": token_prefix_error,
+            "translated_text": translated_text,
+            "similarity_of_original_translation": similarity_of_original_translation,
+            "similarity_vs_source": similarity_vs_source,
+            "similarity_vs_target": similarity_vs_target,
+            "model_name": model_name
+        }
     
-    def translate_with_best_model(self, text, target_text=None, source_lang="en", target_lang="fr",
-                                  use_find_replace=False, model_names=None, generation_kwargs=None):
-        if model_names is None:
-            model_names = list(self.loaded_models.keys())
+    def translate_with_all_models(self, text, source_lang="en", target_lang="fr",
+                                  use_find_replace=False, generation_kwargs=None, idx=None, target_text=None):
+        model_names = list(self.loaded_models.keys())
         
         all_results = {}
         best_result = None
         best_similarity = float('-inf')
+        n_successful_models = 0
         
         for model_name in model_names:
             result = self.translate_single(
-                text, model_name, source_lang, target_lang, use_find_replace, generation_kwargs
+                text, model_name, source_lang, target_lang, use_find_replace, generation_kwargs, idx, target_text
             )
             all_results[model_name] = result
             
-            if result["success"] and result["similarity_vs_source"] is not None:
+            is_error = result["find_replace_error"] or result["token_prefix_error"]
+            if not is_error and result["similarity_vs_source"] is not None:
+                n_successful_models += 1
                 if result["similarity_vs_source"] > best_similarity:
                     best_similarity = result["similarity_vs_source"]
                     best_result = result.copy()
@@ -468,42 +434,20 @@ class TranslationManager:
                 "best_model_source": None
             }
         
-        if target_text and self.embedder and best_result["success"]:
-            try:
-                from sentence_transformers.util import pytorch_cos_sim
-                
-                target_embedding = self.embedder.encode(target_text, convert_to_tensor=True)
-                translated_embedding = self.embedder.encode(best_result["translated_text"], convert_to_tensor=True)
-                best_result["similarity_vs_target"] = pytorch_cos_sim(target_embedding, translated_embedding).item()
-                
-                if "similarity_vs_original" not in best_result:
-                    source_embedding = self.embedder.encode(text, convert_to_tensor=True)
-                    best_result["similarity_vs_original"] = pytorch_cos_sim(source_embedding, target_embedding).item()
-            
-            except Exception as e:
-                self.translation_errors[f"best_model_{hash(text)}_target_similarity"] = {
-                    "error": f"Target similarity calculation failed: {str(e)}",
-                    "text": text,
-                    "target_text": target_text
-                }
+        all_results['best_model'] = best_result
         
-        return {
-            "best_result": best_result,
-            "all_results": all_results,
-            "models_tried": len(all_results),
-            "successful_models": sum(1 for r in all_results.values() if r["success"])
-        }
+        return all_results
     
     def get_error_summary(self):
         return {
-            "translation_errors": len(self.translation_errors),
+            "extra_token_errors": len(self.extra_token_errors),
             "find_replace_errors": len(self.find_replace_errors),
-            "translation_error_details": self.translation_errors,
-            "find_replace_error_details": self.find_replace_errors
+            "extra_token_error_details": self.extra_token_errors,
+            "find_replace_error_details": self.find_replace_errors,
         }
     
     def clear_errors(self):
-        self.translation_errors.clear()
+        self.extra_token_errors.clear()
         self.find_replace_errors.clear()
 
 
