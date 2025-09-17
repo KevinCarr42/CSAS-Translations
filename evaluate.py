@@ -33,7 +33,7 @@ def sample_data(path, n_samples=10, source_lang=None,
         return random.sample(data, k) if k < len(data) else data
 
 
-def test_translations_with_loaded_models(translation_manager, dataset, name_suffix=None, bypass_rules=True):
+def test_translations_with_loaded_models(translation_manager, dataset, name_suffix=None, use_find_and_replace=True):
     n_samples = len(dataset)
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     INDENT = 70
@@ -67,7 +67,7 @@ def test_translations_with_loaded_models(translation_manager, dataset, name_suff
             text=source,
             source_lang=source_lang,
             target_lang=other_lang,
-            use_find_replace=not bypass_rules,
+            use_find_replace=use_find_and_replace,
             idx=i,
             target_text=target,
         )
@@ -234,20 +234,19 @@ if __name__ == "__main__":
     embedder = SentenceTransformer('sentence-transformers/LaBSE')
     print("Embedder loaded successfully!\n")
     
-    n_tests = 100
+    n_tests = 10
     print(f"Sampling {n_tests} examples from datasets...")
     sampled_testing_data = sample_data(testing_data, n_tests, use_eval_split=False)
     sampled_training_data = sample_data(training_data, n_tests, use_eval_split=True)
-    print(f"Sampled {len(sampled_testing_data)} test examples and {len(sampled_training_data)} train examples\n")
     
     translation_manager = TranslationManager(all_models, embedder)
     print("Loading models...")
     translation_manager.load_models()
     
-    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", True)
-    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", True)
-    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", False)
-    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", False)
+    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_no_rules", False)
+    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_no_rules", False)
+    # test_translations_with_loaded_models(translation_manager, sampled_testing_data, "test_all", True)
+    # test_translations_with_loaded_models(translation_manager, sampled_training_data, "train_all", True)
     
     # TODO: test repeated failuers fix
     repeated_failures_data = [sampled_testing_data[0] for _ in range(n_tests)]

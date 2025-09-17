@@ -108,7 +108,6 @@ class NLLBTranslationModel(BaseTranslationModel):
             input_text,
             input_language="en",
             target_language="fr",
-            use_finetuned=False,
             generation_kwargs=None,
     ):
         tokenizer = self.load_tokenizer()
@@ -183,7 +182,6 @@ class OpusTranslationModel(BaseTranslationModel):
             input_text,
             input_language="en",
             target_language="fr",
-            use_finetuned=False,
             generation_kwargs=None,
     ):
         tokenizer, model = self._load_directional(input_language, target_language)
@@ -208,18 +206,17 @@ class OpusTranslationModel(BaseTranslationModel):
 class M2M100TranslationModel(BaseTranslationModel):
     LANGUAGE_CODES = {"en": "en", "fr": "fr"}
     
-    def translate_text(self, input_text, input_language="en", target_language="fr",
-                       use_finetuned=False, generation_kwargs=None):
+    def translate_text(self, input_text, input_language="en", target_language="fr", generation_kwargs=None):
         tokenizer = self.load_tokenizer()
         model = self.load_model()
-        
+
         source_code = self.LANGUAGE_CODES[input_language]
         target_code = self.LANGUAGE_CODES[target_language]
         tokenizer.src_lang = source_code
-        
+
         model_inputs = tokenizer(input_text, return_tensors="pt", padding=True)
         model_inputs = {k: (v.to(model.device) if hasattr(v, "to") else v) for k, v in model_inputs.items()}
-        
+
         generation_arguments = {
             "max_new_tokens": 256,
             "num_beams": 4,
@@ -229,10 +226,53 @@ class M2M100TranslationModel(BaseTranslationModel):
         }
         if generation_kwargs:
             generation_arguments.update(generation_kwargs)
-        
+
         output_token_ids = model.generate(**model_inputs, **generation_arguments)
         text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
         return self.clean_output(text_output)
+    
+    # TODO: DELETE AFTER TESTING
+    # def translate_text(self, input_text, input_language="en", target_language="fr", generation_kwargs=None):
+    #     tokenizer = self.load_tokenizer()
+    #     model = self.load_model()
+    #
+    #     source_code = self.LANGUAGE_CODES[input_language]
+    #     target_code = self.LANGUAGE_CODES[target_language]
+    #     tokenizer.src_lang = source_code
+    #
+    #     model_inputs = tokenizer(input_text, return_tensors="pt", padding=True)
+    #     model_inputs = {k: (v.to(model.device) if hasattr(v, "to") else v) for k, v in model_inputs.items()}
+    #
+    #     generation_arguments = {
+    #         "max_new_tokens": 256,
+    #         "num_beams": 4,
+    #         "do_sample": False,
+    #         "pad_token_id": tokenizer.pad_token_id,
+    #         "forced_bos_token_id": tokenizer.get_lang_id(target_code),
+    #     }
+    #
+    #     print(f"BEFORE update - generation_kwargs type: {type(generation_kwargs)}, value: {generation_kwargs}")
+    #
+    #     if generation_kwargs:
+    #         print(f"BEFORE update: {generation_arguments}")
+    #         generation_arguments.update(generation_kwargs)
+    #         print(f"AFTER update: {generation_arguments}")
+    #
+    #     # CRITICAL TEST - manually override to prove it works
+    #     # generation_arguments["max_new_tokens"] = 5
+    #     # print(f"MANUALLY FORCED max_new_tokens=5")
+    #
+    #     print(f"CALLING generate() with: {generation_arguments}")
+    #     output_token_ids = model.generate(**model_inputs, **generation_arguments)
+    #
+    #     print(f"Output shape: {output_token_ids.shape}")
+    #     print(f"Output tokens: {output_token_ids[0][:20]}")  # First 20 tokens
+    #
+    #     text_output = tokenizer.batch_decode(output_token_ids, skip_special_tokens=True)[0].strip()
+    #     print(f"Decoded text length: {len(text_output)}")
+    #     print(f"First 50 chars: {text_output[:50]}")
+    #
+    #     return self.clean_output(text_output)
 
 
 class MBART50TranslationModel(BaseTranslationModel):
@@ -307,6 +347,8 @@ class MBART50TranslationModel(BaseTranslationModel):
 
 
 class TranslationManager:
+    TOKEN_PREFIXES = ['NOMENCLATURE', 'TAXON', 'ACRONYM', 'SITE']
+    
     def __init__(self, all_models, embedder=None):
         self.all_models = all_models
         self.embedder = embedder
@@ -324,45 +366,107 @@ class TranslationManager:
             _ = model_instance.translate_text("Test", "en", "fr")
             self.loaded_models[name] = model_instance
     
+    def translate_with_retries(self, model, text, source_lang, target_lang,
+                               token_mapping=None, base_generation_kwargs=None):
+        param_variations = [
+            {"num_beams": 4},
+            {"num_beams": 2},
+            {"num_beams": 5},
+            {"num_beams": 6},
+            {"num_beams": 7},
+            {"num_beams": 8},
+            {"num_beams": 4, "length_penalty": 0.8},
+            {"num_beams": 4, "length_penalty": 1.2},
+            {"num_beams": 4, "repetition_penalty": 1.1},
+            # TODO: delete after testing
+            {"max_new_tokens": 10},
+            {"max_new_tokens": 5},
+            {"min_length": 200},
+        ]
+        
+        base_kwargs = base_generation_kwargs or {}
+        
+        for i, params in enumerate(param_variations):
+            generation_kwargs = {**base_kwargs, **params}
+            
+            translated = model.translate_text(
+                text, source_lang, target_lang, generation_kwargs=generation_kwargs
+            )
+            
+            if self.is_valid_translation(translated, text, token_mapping):
+                print(f'VALID :) ({i})')  # TODO: delete after testing
+                return translated, i, params
+            else:  # TODO: delete after testing
+                print(f'invalid :( ({i}):\t', params)
+                print('\t\t\t', translated)
+        
+        return None, len(param_variations), None
+    
+    def check_token_prefix_error(self, translated_text, original_text):
+        for token_prefix in self.TOKEN_PREFIXES:
+            if token_prefix in translated_text:
+                if not original_text or token_prefix not in original_text:
+                    return True
+        return False
+    
+    def is_valid_translation(self, translated_text, original_text, token_mapping=None):
+        if self.check_token_prefix_error(translated_text, original_text):
+            return False
+        
+        if token_mapping:
+            for key in token_mapping.keys():
+                if key not in translated_text:
+                    return False
+        
+        return True
+    
     def translate_single(self, text, model_name, source_lang="en", target_lang="fr",
-                         use_find_replace=False, generation_kwargs=None, idx=None, target_text=None):
+                         use_find_replace=True, generation_kwargs=None, idx=None,
+                         target_text=None, debug=False):
         model = self.loaded_models[model_name]
         
         find_replace_error = False
+        retry_attempts = 0
+        retry_params = None
+        
         if use_find_replace:
             preprocessed_text, token_mapping = preprocess_for_translation(text)
-            translated_with_tokens = model.translate_text(preprocessed_text, source_lang, target_lang, generation_kwargs)
             
-            for key in token_mapping.keys():
-                # FIXME: should this pop instead of just checking if it exists, so that we can count and watch out for extra incorrect duplicates?
-                if key not in translated_with_tokens:
-                    find_replace_error = True
-                    break
+            translated_with_tokens, retry_attempts, retry_params = self.translate_with_retries(
+                model, preprocessed_text, source_lang, target_lang,
+                token_mapping, generation_kwargs
+            )
             
-            if find_replace_error:
-                self.find_replace_errors[f"{model_name}_{idx}"] = {
-                    "original_text": text,
-                    "preprocessed_text": preprocessed_text,
-                    "translated_with_tokens": translated_with_tokens,
-                    "token_mapping": token_mapping,
-                }
-                translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
+            if translated_with_tokens and self.is_valid_translation(
+                    translated_with_tokens, text, token_mapping
+            ):
+                translated_text = postprocess_translation(
+                    translated_with_tokens, token_mapping
+                )
             else:
-                translated_text = postprocess_translation(translated_with_tokens, token_mapping)
+                find_replace_error = True
+                if debug:
+                    self.find_replace_errors[f"{model_name}_{idx}"] = {
+                        "original_text": text,
+                        "preprocessed_text": preprocessed_text,
+                        "translated_with_tokens": translated_with_tokens,
+                        "token_mapping": token_mapping,
+                        "retry_attempts": retry_attempts,
+                        "final_retry_params": retry_params,
+                    }
+                translated_text = model.translate_text(
+                    text, source_lang, target_lang, generation_kwargs
+                )
         else:
             preprocessed_text = None
             translated_with_tokens = None
             token_mapping = None
-            translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
+            translated_text = model.translate_text(
+                text, source_lang, target_lang, generation_kwargs
+            )
         
-        token_prefix_error = False
-        for token_prefix in ['NOMENCLATURE', 'TAXON', 'ACRONYM', 'SITE']:
-            if token_prefix in translated_text:
-                # just in case that all caps token is actually in the source text
-                if token_prefix not in text:
-                    token_prefix_error = True
-        
-        if token_prefix_error:
+        token_prefix_error = self.check_token_prefix_error(translated_text, text)
+        if token_prefix_error and debug:
             tokens_to_replace = [x for x in token_mapping.keys()] if token_mapping else None
             self.extra_token_errors[f"{model_name}_{idx}"] = {
                 "original_text": text,
@@ -371,10 +475,9 @@ class TranslationManager:
                 "tokens_to_replace": tokens_to_replace,
                 "preprocessed_text": preprocessed_text,
                 "translated_with_tokens": translated_with_tokens,
+                "retry_attempts": retry_attempts,
+                "final_retry_params": retry_params,
             }
-            
-            # # TODO: fix translated text after debugging
-            # translated_text = model.translate_text(text, source_lang, target_lang, generation_kwargs)
         
         source_embedding = self.embedder.encode(text, convert_to_tensor=True)
         translated_embedding = self.embedder.encode(translated_text, convert_to_tensor=True)
@@ -394,27 +497,27 @@ class TranslationManager:
             "similarity_of_original_translation": similarity_of_original_translation,
             "similarity_vs_source": similarity_vs_source,
             "similarity_vs_target": similarity_vs_target,
-            "model_name": model_name
+            "model_name": model_name,
+            "retry_attempts": retry_attempts if use_find_replace else 0,
         }
     
     def translate_with_all_models(self, text, source_lang="en", target_lang="fr",
-                                  use_find_replace=False, generation_kwargs=None, idx=None, target_text=None):
+                                  use_find_replace=True, generation_kwargs=None,
+                                  idx=None, target_text=None, debug=False):
         model_names = list(self.loaded_models.keys())
         
         all_results = {}
         best_result = None
         best_similarity = float('-inf')
-        n_successful_models = 0
         
         for model_name in model_names:
             result = self.translate_single(
-                text, model_name, source_lang, target_lang, use_find_replace, generation_kwargs, idx, target_text
+                text, model_name, source_lang, target_lang,
+                use_find_replace, generation_kwargs, idx, target_text, debug
             )
             all_results[model_name] = result
             
-            is_error = result["find_replace_error"] or result["token_prefix_error"]
-            if not is_error and result["similarity_vs_source"] is not None:
-                n_successful_models += 1
+            if self.is_valid_translation(result['translated_text'], text) and result["similarity_vs_source"] is not None:
                 if result["similarity_vs_source"] > best_similarity:
                     best_similarity = result["similarity_vs_source"]
                     best_result = result.copy()
@@ -423,7 +526,6 @@ class TranslationManager:
         
         if best_result is None:
             best_result = {
-                "success": False,
                 "error": "No valid translations from any model",
                 "translated_text": "[NO VALID TRANSLATIONS]",
                 "similarity_vs_source": None,
@@ -434,6 +536,7 @@ class TranslationManager:
         
         all_results['best_model'] = best_result
         
+        # TODO: option to just return best model results without the extra info
         return all_results
     
     def get_error_summary(self):
