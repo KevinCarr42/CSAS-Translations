@@ -28,6 +28,11 @@ A comprehensive evaluation framework has been established to assess translation 
 - Hyperparameter optimisation for the integrated system
 - Final model selection based on comprehensive evaluation criteria
 
+### Best-of-Ensemble Combined Model
+- In addition the individual translation models, another Best-of-Ensemble model is created by combining results from all other models
+- For each sentence, the highest similarity between source and translated text (after excluding errors) is considered to be the Best-of-Ensemble or the "ensemble model"
+- The ensemble model returns improved translations, while requiring more time and computational resources to complete translations
+
 ## Evaluation Methodology
 
 ### Analytical Assessment
@@ -45,6 +50,12 @@ A comprehensive evaluation framework has been established to assess translation 
 ## Current Status
 
 The integrated translation system has been successfully implemented and analytical evaluation is complete. Human evaluation through the survey application is currently in progress, with results pending to inform final model selection and deployment preparation.
+
+## Additional Notes About Energy Consumption
+
+With the inclusion of the ensemble model described above, energy consumption was flagged as a potential concern. The ensemble model could increase energy and costs by as much a factor of 10, since all translations are performed for each translation model, including fine-tuned and base models. However, analysis indicates that ensemble model translations would likely utilise less than 16 kWhr of energy over the course a year (assuming a conservatively high 200 documents are translated). This energy usage would lead to approximately $1.56 in estimated yearly electrical costs. The energy impacts have therefore been deemed to be negligible for this project.
+
+Important to note, if a similar project utilises this approach and has a much larger volume of translations, energy and costs may become a factor. In this case it is worth noting that costs (and time) could be reduced by an order of magnitude if the smallest translation model is utilised, instead of the ensemble model. Additional energy reductions could be obtained by further optimising the deployed system configuration and/or eliminating repeated attempts to deal with token replacement errors (as described in Phase 3).
 
 ## Expected Outcomes
 
